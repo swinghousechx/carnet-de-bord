@@ -5,7 +5,7 @@ Source : cahier des charges fonctionnel de Sam (« Carnet de bord — Notes de f
 
 ## 1. Objectif et périmètre
 
-PWA installable sur iPhone pour logger chaque déplacement professionnel, calculer le montant dû au barème kilométrique + frais annexes, et produire chaque mois **deux exports distincts** pour le comptable (Andy) :
+PWA installable sur iPhone pour logger chaque déplacement professionnel, calculer le montant dû au barème kilométrique + frais annexes, et produire chaque mois **deux exports distincts** pour le comptable :
 
 - **Swing House (SAS)** : note de frais versée par la société au dirigeant (remboursement).
 - **LMNP Nid de l'Aiguille (EI, BIC réel)** : charge déductible dans la compta de l'EI (pas un versement).
@@ -22,10 +22,11 @@ Un seul utilisateur (Sam). Pas de PIN/Face ID à l'ouverture, mais backend prot�
 | Hébergement | **GitHub Pages**, repo public `swinghousechx/carnet-de-bord`, déploiement auto sur push `main` |
 | Cartographie | **Google Maps Platform** : Places API (New) pour l'autocomplete, **Routes API** pour les km |
 | Domicile ↔ Swing House | Tagué « domicile–travail », **exclu par défaut** de la note SAS, réintégrable par réglage annuel |
-| Cumul barème | **Séparé par activité** : un compteur par (véhicule, activité, année civile) — à confirmer par Andy |
-| Format export | Format standard PDF + CSV, colonnes centralisées dans un fichier de config ; question posée à Andy (annexe A) |
+| Cumul barème | **Séparé par activité** : un compteur par (véhicule, activité, année civile) — à confirmer par le comptable |
+| Format export | Format standard PDF + CSV, colonnes centralisées dans un fichier de config ; question posée au comptable (annexe A) |
 | Statut « validé » | **Automatique** dès qu'un trajet est complet ; brouillon = incomplet ou mis de côté volontairement |
 | Montants à l'accueil | **Aucun montant en euros sur l'accueil** : les montants n'apparaissent que dans l'écran Récap/export |
+| Design visuel | **Simple, épuré, style Apple** : l'app doit ressembler à une app iOS native (§9.0) |
 | Emplacement local | `/Users/samuelpochat/Documents/carnet-de-bord` |
 
 ## 3. Corrections apportées au cahier des charges
@@ -168,7 +169,17 @@ Somme des `trip_expenses`, toujours ajoutés, quel que soit le mode. En mode `fr
 
 ## 9. Écrans
 
-Navigation par barre d'onglets en bas : Accueil · Récap · Réglages ; bouton « + Trajet » toujours accessible.
+### 9.0 Direction visuelle : simple, épurée, style Apple
+
+L'app doit ressembler à une app iOS native (Réglages, Rappels, Cartes), pas à un site web ni à un dashboard.
+
+- **Typographie** : police système (`system-ui, -apple-system` → SF Pro sur iPhone). Échelle iOS : grand titre 34 pt gras en tête d'écran, corps 17 pt, secondaire 15 pt, notes 13 pt. Chiffres tabulaires (`tabular-nums`) pour les km et les montants.
+- **Couleurs** : palette système iOS. Fond gris groupé (#F2F2F7), cellules blanches, texte noir, texte secondaire gris, séparateurs d'un pixel. **Une seule couleur d'accent** (bleu système #007AFF) pour les actions. Les activités sont repérées par un simple point de couleur (deux teintes système discrètes), rien de plus. Brouillon = libellé orange discret ; exporté = petit cadenas gris. Mode sombre automatique (fond noir, cellules #1C1C1E).
+- **Mise en page** : listes groupées en encarts arrondis (« inset grouped », comme l'app Réglages), marges généreuses, une information principale par écran. Pas de cartes à ombre, pas de dégradé, pas d'illustration, pas de logo dans l'interface.
+- **Composants natifs** : barre d'onglets en bas (Accueil · Récap · Réglages, icônes à trait fin type SF Symbols) ; bouton « + » en haut à droite de l'accueil ; ajout/modification d'un trajet dans une **feuille modale** qui monte du bas (« Annuler » à gauche, « Enregistrer » à droite) ; contrôle segmenté pour l'activité ; interrupteurs iOS pour l'aller-retour ; pastilles arrondies pour les favoris ; feuille d'action iOS pour les confirmations (export, réouverture).
+- **Mouvement** : minimal et fonctionnel (montée de feuille à ressort, transitions courtes), aucune animation décorative, respect du réglage « réduire les animations ».
+- **Sensation native** : zones sûres (encoche, barre d'accueil), pas de surbrillance au toucher, champs en 17 pt (pas de zoom automatique), cibles tactiles ≥ 44 pt, hauteur `100dvh`, barre d'état assortie, affichage `standalone`.
+- **Icône d'app** : un pictogramme simple sur fond uni.
 
 ### 9.1 Accueil
 - Mois en cours : **nombre de trajets et km cumulés**, par activité. **Aucun montant en euros.**
@@ -228,6 +239,7 @@ Hors ligne : autocomplete indisponible → seuls favoris et récents sélectionn
 ## 12. Export
 
 ### PDF (un par activité et par mois)
+Mise en page sobre, dans le même esprit que l'app : noir sur blanc, Helvetica, filets fins, aucune couleur.
 - En-tête : « Swing House SAS — Note de frais kilométriques » ou « LMNP Nid de l'Aiguille (EI) — Frais de déplacement ». Bénéficiaire : Sam Pochat. Période. Version (« v2 — annule et remplace v1 » le cas échéant).
 - Véhicule(s) : nom, immatriculation, CV, énergie. Barème appliqué (année, « provisoire » le cas échéant). Cumul annuel du groupe avant / après ce mois.
 - Tableau (une ligne par trajet) : date, motif, départ → arrivée, km (A/R indiqué), montant barème, frais annexes (détail), total. Justification des km corrigés en note. Rattrapages signalés avec leur mois d'origine.
@@ -235,7 +247,7 @@ Hors ligne : autocomplete indisponible → seuls favoris et récents sélectionn
 - Totaux : km, barème, frais annexes, **total**. Mention « Certifié exact » + date.
 
 ### CSV
-Une ligne par trajet ; colonnes définies dans `src/export/columns.ts` (seul fichier à modifier quand Andy aura répondu). Séparateur `;`, décimales à virgule, UTF-8 avec BOM (ouverture directe dans Excel FR).
+Une ligne par trajet ; colonnes définies dans `src/export/columns.ts` (seul fichier à modifier quand le comptable aura répondu). Séparateur `;`, décimales à virgule, UTF-8 avec BOM (ouverture directe dans Excel FR).
 
 ### Partage
 Web Share API avec fichiers (PDF + CSV en une fois) ; repli : téléchargement.
@@ -252,22 +264,22 @@ Web Share API avec fichiers (PDF + CSV en une fois) ; repli : téléchargement.
 - **Vitest — moteur de calcul** : bornes 4 999 / 5 000 / 5 001 et 20 000 / 20 001 km ; somme télescopique = `round2(f(D))` ; ordre d'insertion indifférent ; changement de véhicule en cours d'année (deux chaînes) ; trajets exportés figés + réouverture ; rattrapage ; électrique ; barème provisoire ; mode frais réels ; exclusion/inclusion domicile–travail ; arrondis.
 - **Vitest — règles** : validation des motifs, résolution du véhicule par date, détection domicile–travail, complétude/statut, doublons, format CSV.
 - **SQL** (via Supabase) : RLS, triggers de verrouillage, `export_month`, `reopen_trip`.
-- **Parcours complet** dans le navigateur en format iPhone : ajout, hors ligne simulé, synchro, export, réouverture, v2.
+- **Parcours complet** dans le navigateur en format iPhone, en clair et en sombre : ajout, hors ligne simulé, synchro, export, réouverture, v2.
 
 ## 15. Hors MVP (V2)
 
 Photo des justificatifs · suivi GPS · notifications push de fin de mois · plusieurs véhicules actifs en parallèle · alerte distance/jour anormale · suggestions depuis Google Calendar · mode frais réels complets détaillé.
 
-## 16. Points à valider avec Andy
+## 16. Points à valider avec le comptable
 
 1. Cumul du barème **séparé par activité** (SAS / EI).
 2. Trajets domicile ↔ Swing House : exclus par défaut ; peut-on justifier la contrainte (horaires jusqu'à 22 h) pour les inclure ?
 3. Usage du barème kilométrique dans la compta de l'EI LMNP (BIC réel, véhicule personnel non inscrit à l'actif).
 4. Format d'export (colonnes, intitulés, CSV/Excel ou PDF seul) et rythme d'envoi.
 
-### Annexe A — Message pour Andy
+### Annexe A — Message pour le comptable
 
-> Bonjour Andy,
+> Bonjour,
 >
 > Je mets en place un petit outil pour tenir mes frais kilométriques, en deux dossiers séparés : Swing House (SAS, note de frais) et LMNP Nid de l'Aiguille (EI). Avant de figer l'export mensuel, j'ai besoin de ton avis sur quelques points :
 >
