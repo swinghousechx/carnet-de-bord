@@ -24,6 +24,14 @@ export async function pullAll(db: CarnetDB, remote: RemoteApi, pageSize = 1000):
       count += rows.length
       const last = rows.at(-1)?.updated_at
       const avance = last != null && last !== cursor
+      // Page pleine mais curseur bloqué : plus de lignes que pageSize partagent le même updated_at.
+      // Les lignes excédentaires ne seraient jamais récupérées si on continuait silencieusement.
+      if (rows.length === pageSize && !avance) {
+        throw new SyncError(
+          `Synchro incomplète sur la table ${table} : plus de ${pageSize} lignes partagent l’horodatage ${last}`,
+          false,
+        )
+      }
       if (last != null) {
         cursor = last
         await setMeta(db, key, cursor)

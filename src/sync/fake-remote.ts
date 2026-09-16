@@ -37,6 +37,10 @@ export function fakeRemote() {
       offline = v
     },
     put: <T extends { id: string }>(name: string, row: T) => table(name).set(row.id, { ...(row as ServerRow), updated_at: tick() }),
+    // N'existe que pour reproduire en test le cas où plusieurs lignes partagent exactement le même
+    // horodatage serveur (pagination bloquée) : `put` incrémente toujours l'horloge, donc ne peut pas créer ce cas.
+    putAt: <T extends { id: string }>(name: string, row: T, updatedAt: string) =>
+      table(name).set(row.id, { ...(row as ServerRow), updated_at: updatedAt }),
     get: (name: string, id: string) => table(name).get(id),
   }
 }

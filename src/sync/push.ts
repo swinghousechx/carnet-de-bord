@@ -34,6 +34,17 @@ async function markClean(db: CarnetDB, table: string, rows: AnyLocal[]) {
   })
 }
 
+// Refus durable du serveur : on ne remplace la ligne locale par la version serveur que si elle n'a
+// pas été réécrite localement depuis la capture du lot (même logique que markClean, en écriture).
+// Si _rev a bougé, on ne touche à rien : la ligne reste « à pousser » et repartira au prochain cycle.
+async function replaceWithServerIfUnchanged(db: CarnetDB, table: string, row: AnyLocal, server: ServerRow) {
+  const tbl = db.table<AnyLocal, string>(table)
+  await db.transaction('rw', tbl, async () => {
+    const cur = await tbl.get(row.id)
+    if (cur && cur._rev === row._rev) await tbl.put({ ...server, _dirty: 0, _rev: row._rev } as AnyLocal)
+  })
+}
+
 export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushResult> {
   const result: PushResult = { pushed: 0, rejected: [] }
   for (const table of SYNC_TABLES) {
@@ -59,7 +70,7 @@ export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushRe
       }
       if (one.fatal) throw new SyncError(one.error, true)
       const server: ServerRow | null = await remote.fetchById(table, row.id)
-      if (server) await tbl.put({ ...server, _dirty: 0, _rev: row._rev } as AnyLocal)
+      if (server) await replaceWithServerIfUnchanged(db, table, row, server)
       result.rejected.push({ table, id: row.id, error: one.error })
     }
   }

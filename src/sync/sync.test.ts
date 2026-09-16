@@ -56,6 +56,23 @@ describe('pushDirty', () => {
     await expect(pushDirty(db, r.api)).rejects.toBeInstanceOf(SyncError)
     expect(await countDirty(db)).toBe(1)
   })
+
+  it('refus serveur avec réécriture locale pendant l’isolement : la version locale est conservée, à pousser, et le refus est signalé', async () => {
+    const r = fakeRemote()
+    const t = makeTrip({ statut: 'exporte', motif: 'Motif verrouillé côté serveur' })
+    r.put('trips', t)
+    r.rejectIds.add(t.id)
+    await saveRow(db, 'trips', { ...t, statut: 'valide', motif: 'Tentative de modification locale' })
+    const fetchById = r.api.fetchById
+    // Simule une saisie utilisateur entre la capture du lot à pousser et l'appel réseau d'isolement.
+    r.api.fetchById = async (table, id) => {
+      await saveRow(db, 'trips', { ...t, motif: 'Modifiée pendant l’isolement' })
+      return fetchById(table, id)
+    }
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toHaveLength(1)
+    expect(await db.trips.get(t.id)).toMatchObject({ motif: 'Modifiée pendant l’isolement', _dirty: 1, _rev: 2 })
+  })
 })
 
 describe('pullAll', () => {
@@ -74,6 +91,21 @@ describe('pullAll', () => {
     await saveRow(db, 'trips', { ...t, motif: 'Version locale plus récente' })
     await pullAll(db, r.api)
     expect((await db.trips.get(t.id))?.motif).toBe('Version locale plus récente')
+  })
+
+  it('page pleine sans avancée du curseur : SyncError explicite mentionnant la table', async () => {
+    const r = fakeRemote()
+    const meme_horodatage = new Date(Date.UTC(2026, 8, 15, 12, 0, 0)).toISOString()
+    for (let i = 0; i < 3; i++) r.putAt('trips', makeTrip(), meme_horodatage)
+    let caught: unknown
+    try {
+      await pullAll(db, r.api, 2)
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(SyncError)
+    expect((caught as SyncError).message).toContain('trips')
+    expect((caught as SyncError).fatal).toBe(false)
   })
 })
 
