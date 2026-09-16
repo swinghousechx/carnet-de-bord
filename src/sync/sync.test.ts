@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CarnetDB } from '../db/db'
-import { countDirty, saveRow } from '../db/repo'
+import { countDirty, saveRow, setMeta } from '../db/repo'
 import { makeTrip, makeVehicle } from '../test/fixtures'
 import { createSyncEngine } from './engine'
 import { fakeRemote } from './fake-remote'
@@ -93,19 +93,37 @@ describe('pullAll', () => {
     expect((await db.trips.get(t.id))?.motif).toBe('Version locale plus récente')
   })
 
-  it('page pleine sans avancée du curseur : SyncError explicite mentionnant la table', async () => {
+  it('plus de pageSize lignes partageant exactement le même updated_at sont toutes récupérées', async () => {
     const r = fakeRemote()
     const meme_horodatage = new Date(Date.UTC(2026, 8, 15, 12, 0, 0)).toISOString()
-    for (let i = 0; i < 3; i++) r.putAt('trips', makeTrip(), meme_horodatage)
-    let caught: unknown
-    try {
-      await pullAll(db, r.api, 2)
-    } catch (e) {
-      caught = e
-    }
-    expect(caught).toBeInstanceOf(SyncError)
-    expect((caught as SyncError).message).toContain('trips')
-    expect((caught as SyncError).fatal).toBe(false)
+    for (let i = 0; i < 5; i++) r.putAt('trips', makeTrip(), meme_horodatage)
+    expect(await pullAll(db, r.api, 2)).toBe(5)
+    expect(await db.trips.count()).toBe(5)
+  })
+
+  it('exactement pageSize lignes partageant le dernier horodatage : la synchro se termine sans erreur', async () => {
+    const r = fakeRemote()
+    const meme_horodatage = new Date(Date.UTC(2026, 8, 15, 12, 0, 0)).toISOString()
+    r.putAt('trips', makeTrip(), meme_horodatage)
+    r.putAt('trips', makeTrip(), meme_horodatage)
+    await expect(pullAll(db, r.api, 2)).resolves.toBe(2)
+    expect(await db.trips.count()).toBe(2)
+  })
+
+  it('un curseur déjà stocké sous l’ancienne forme (chaîne seule) est accepté et ne fait rien perdre', async () => {
+    const r = fakeRemote()
+    const t1 = makeTrip()
+    r.put('trips', t1)
+    const stored1 = r.get('trips', t1.id)!
+    // Simule un curseur mémorisé par l'ancien code : une simple chaîne d'horodatage, sans identifiant.
+    // Traité comme (horodatage, identifiant vide), il ne fait rien perdre : au pire il refait
+    // repasser les lignes de cet horodatage précis (idempotent), jamais tout l'historique.
+    await setMeta(db, 'cursor:trips', stored1.updated_at)
+    const t2 = makeTrip()
+    r.putAt('trips', t2, stored1.updated_at) // même horodatage que le curseur déjà enregistré
+    await expect(pullAll(db, r.api)).resolves.toBe(2)
+    expect(await db.trips.get(t1.id)).toBeDefined()
+    expect(await db.trips.get(t2.id)).toBeDefined()
   })
 })
 

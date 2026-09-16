@@ -26,13 +26,14 @@ const COUCHES_AUTORISEES = [
   join(SRC, 'sync'),
 ]
 
-const METHODES_ECRITURE = ['put', 'add', 'update', 'delete', 'bulkPut', 'bulkAdd', 'bulkDelete', 'bulkUpdate', 'clear']
+const METHODES_ECRITURE = ['put', 'add', 'update', 'delete', 'bulkPut', 'bulkAdd', 'bulkDelete', 'bulkUpdate', 'clear', 'modify']
 
-// Forme 1, accès direct : `db.<table>.<méthode>(` ou `db.table(...).<méthode>(`
-// (generics `<...>` optionnels avant les parenthèses de `table(...)`).
-const MOTIF_ECRITURE_DIRECTE = new RegExp(
-  `\\bdb\\.(?:\\w+|table(?:<[^>]*>)?\\([^)]*\\))\\.(?:${METHODES_ECRITURE.join('|')})\\s*\\(`,
-)
+// Racine directe d'une chaîne : `db.<table>` ou `db.table(...)` (generics `<...>` optionnels avant
+// les parenthèses de `table(...)`). On ne capture qu'un seul point après `db` : la suite de la
+// chaîne (où peut apparaître la méthode d'écriture, immédiatement ou plus loin) est examinée à part —
+// voir `chaineContientEcriture` — pour repérer aussi les formes chaînées comme
+// `db.trips.where('id').equals(x).delete()`, pas seulement `db.trips.put(...)`.
+const RACINE_DIRECTE = /\bdb\.\w+/g
 
 // Repère les variables assignées depuis `db.table(...)` ou `db.<table>` — ex. `const t = db.table('trips')`
 // ou `const t = db.trips`. Une seule passe sur le fichier : pas de résolution de portée, pas de suivi
@@ -45,27 +46,54 @@ export interface EcritureDetectee {
   texte: string
 }
 
+// Vrai si une méthode d'écriture apparaît n'importe où dans la suite d'une chaîne — juste après un
+// point (`.put(`, plus loin dans `.where(...).equals(...).delete(`), ou en tout début de chaîne
+// quand le point qui précède la racine a déjà été consommé par le motif appelant (`put(` après
+// avoir reconnu la variable `t` puis son point).
+function chaineContientEcriture(suite: string): boolean {
+  return new RegExp(`(?:^|\\.)(?:${METHODES_ECRITURE.join('|')})\\s*\\(`).test(suite)
+}
+
 /**
- * Détecte les écritures Dexie directes (`db.<table>.put(...)`, ou via une variable intermédiaire
- * `const t = db.table(...); t.put(...)`) dans un extrait de code. Ignore les lectures
- * (`.toArray()`, `.get(...)`, `.where(...)`, etc.) et les appels à saveRow/saveRows/softDelete.
+ * Détecte les écritures Dexie directes — accès direct (`db.<table>.put(...)`) ou via une variable
+ * intermédiaire (`const t = db.table(...); t.put(...)`) — y compris sous forme chaînée
+ * (`db.trips.where('id').equals(x).delete()`, `db.trips.toCollection().modify(...)`, et leurs
+ * équivalents via variable). On raisonne sur la racine de la chaîne : si elle part de `db.<table>`,
+ * de `db.table(...)`, ou d'une variable issue de l'un des deux, et qu'une méthode d'écriture
+ * apparaît n'importe où dans la chaîne, c'est une violation. Ignore les lectures légitimes
+ * (`.toArray()`, `.get(...)`, `.where(...).first()`, `.count()`, `.each(...)`, etc.) et les appels
+ * à saveRow/saveRows/softDelete.
  */
 export function detecterEcrituresDirectes(code: string): EcritureDetectee[] {
   const variablesTable = new Set<string>()
   for (const correspondance of code.matchAll(MOTIF_ASSIGNATION_TABLE)) {
     variablesTable.add(correspondance[1])
   }
-
-  const motifEcritureViaVariable =
-    variablesTable.size > 0
-      ? new RegExp(`\\b(?:${[...variablesTable].join('|')})\\.(?:${METHODES_ECRITURE.join('|')})\\s*\\(`)
-      : null
+  const motifVariable = variablesTable.size > 0 ? new RegExp(`\\b(?:${[...variablesTable].join('|')})\\b`, 'g') : null
 
   const violations: EcritureDetectee[] = []
   code.split('\n').forEach((ligne, index) => {
-    if (MOTIF_ECRITURE_DIRECTE.test(ligne) || (motifEcritureViaVariable !== null && motifEcritureViaVariable.test(ligne))) {
-      violations.push({ ligne: index + 1, texte: ligne.trim() })
+    let violee = false
+
+    for (const correspondance of ligne.matchAll(RACINE_DIRECTE)) {
+      const suite = ligne.slice((correspondance.index ?? 0) + correspondance[0].length)
+      if (chaineContientEcriture(suite)) {
+        violee = true
+        break
+      }
     }
+
+    if (!violee && motifVariable !== null) {
+      for (const correspondance of ligne.matchAll(motifVariable)) {
+        const suite = ligne.slice((correspondance.index ?? 0) + correspondance[0].length)
+        if (chaineContientEcriture(suite)) {
+          violee = true
+          break
+        }
+      }
+    }
+
+    if (violee) violations.push({ ligne: index + 1, texte: ligne.trim() })
   })
   return violations
 }
@@ -118,8 +146,34 @@ describe('garde-fou : pas d’écriture Dexie directe hors de src/db et src/sync
       expect(violations).toEqual([{ ligne: 2, texte: 't.put(row)' }])
     })
 
+    it('signale une écriture chaînée directe (db.<table>.where(...).delete())', () => {
+      const violations = detecterEcrituresDirectes(`await db.trips.where('id').equals(x).delete()`)
+      expect(violations).toEqual([{ ligne: 1, texte: `await db.trips.where('id').equals(x).delete()` }])
+    })
+
+    it('signale une écriture chaînée via variable intermédiaire', () => {
+      const code = ["const t = db.table('trips')", "t.where('id').equals(x).delete()"].join('\n')
+      const violations = detecterEcrituresDirectes(code)
+      expect(violations).toEqual([{ ligne: 2, texte: "t.where('id').equals(x).delete()" }])
+    })
+
+    it('signale un modify (méthode d’écriture au même titre que put/add/…)', () => {
+      const violations = detecterEcrituresDirectes(`await db.trips.toCollection().modify({ done: true })`)
+      expect(violations).toEqual([{ ligne: 1, texte: `await db.trips.toCollection().modify({ done: true })` }])
+    })
+
     it('laisse passer une lecture légitime (.toArray()/.get())', () => {
       const code = ["const t = db.table('trips')", 'await t.toArray()', "await db.trips.get('id')"].join('\n')
+      expect(detecterEcrituresDirectes(code)).toEqual([])
+    })
+
+    it('laisse passer d’autres lectures légitimes chaînées (.where(...).first(), .count(), .each(...))', () => {
+      const code = [
+        "await db.trips.where('id').equals(x).first()",
+        'await db.trips.count()',
+        "const t = db.table('trips')",
+        'await t.each((row) => console.log(row))',
+      ].join('\n')
       expect(detecterEcrituresDirectes(code)).toEqual([])
     })
 

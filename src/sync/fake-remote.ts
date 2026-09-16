@@ -1,4 +1,4 @@
-import type { RemoteApi, ServerRow } from './remote'
+import type { Cursor, RemoteApi, ServerRow } from './remote'
 
 // Faux Supabase en mémoire : horodate chaque écriture, peut refuser des ids ou simuler une coupure.
 export function fakeRemote() {
@@ -18,11 +18,15 @@ export function fakeRemote() {
       for (const r of rows) table(name).set(r.id as string, { ...(r as ServerRow), updated_at: tick() })
       return { error: null, fatal: false }
     },
-    async fetchSince(name, cursor, limit) {
+    async fetchSince(name, cursor: Cursor | null, limit) {
       if (offline) return { rows: [], error: 'Failed to fetch' }
+      const apresCurseur = (r: ServerRow) =>
+        !cursor ||
+        r.updated_at > cursor.updatedAt ||
+        (r.updated_at === cursor.updatedAt && (r.id as string) > cursor.id)
       const rows = [...table(name).values()]
-        .filter((r) => !cursor || r.updated_at >= cursor)
-        .sort((a, b) => a.updated_at.localeCompare(b.updated_at))
+        .filter(apresCurseur)
+        .sort((a, b) => a.updated_at.localeCompare(b.updated_at) || (a.id as string).localeCompare(b.id as string))
         .slice(0, limit)
       return { rows, error: null }
     },

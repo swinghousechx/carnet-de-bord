@@ -1,15 +1,37 @@
 import { PULL_TABLES, type CarnetDB, type Local } from '../db/db'
 import { getMeta, setMeta } from '../db/repo'
-import { SyncError, type RemoteApi } from './remote'
+import { SyncError, type Cursor, type RemoteApi } from './remote'
 
 type AnyLocal = Local<{ id: string }>
 
-// Tire les lignes modifiées depuis le dernier curseur (updated_at serveur), table par table.
+// Le curseur mémorisé dans `meta` était autrefois un simple horodatage (chaîne). On l'accepte
+// encore sous cette ancienne forme, en le traitant comme (horodatage, identifiant vide) : cela
+// évite de planter ou de tout re-télécharger pour les curseurs déjà enregistrés avant ce format.
+function parseCursor(raw: string | null): Cursor | null {
+  if (raw == null) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === 'object' && typeof (parsed as Cursor).updatedAt === 'string') {
+      const c = parsed as Cursor
+      return { updatedAt: c.updatedAt, id: typeof c.id === 'string' ? c.id : '' }
+    }
+  } catch {
+    // Pas du JSON : c'est l'ancien format, une chaîne d'horodatage brute.
+  }
+  return { updatedAt: raw, id: '' }
+}
+
+// Tire les lignes modifiées depuis le dernier curseur, table par table.
+//
+// Le curseur est une clé composite (updated_at, id) : le tri et le filtre côté serveur portent sur
+// cette paire, strictement croissante, ce qui garantit que le curseur avance toujours d'une page à
+// l'autre — même quand plus d'une page de lignes partage exactement le même updated_at. La boucle
+// s'arrête simplement quand une page n'est pas pleine.
 export async function pullAll(db: CarnetDB, remote: RemoteApi, pageSize = 1000): Promise<number> {
   let count = 0
   for (const table of PULL_TABLES) {
     const key = `cursor:${table}`
-    let cursor = await getMeta(db, key)
+    let cursor = parseCursor(await getMeta(db, key))
     for (;;) {
       const { rows, error } = await remote.fetchSince(table, cursor, pageSize)
       if (error) throw new SyncError(error, true)
@@ -22,21 +44,12 @@ export async function pullAll(db: CarnetDB, remote: RemoteApi, pageSize = 1000):
         }
       })
       count += rows.length
-      const last = rows.at(-1)?.updated_at
-      const avance = last != null && last !== cursor
-      // Page pleine mais curseur bloqué : plus de lignes que pageSize partagent le même updated_at.
-      // Les lignes excédentaires ne seraient jamais récupérées si on continuait silencieusement.
-      if (rows.length === pageSize && !avance) {
-        throw new SyncError(
-          `Synchro incomplète sur la table ${table} : plus de ${pageSize} lignes partagent l’horodatage ${last}`,
-          false,
-        )
-      }
+      const last = rows.at(-1)
       if (last != null) {
-        cursor = last
-        await setMeta(db, key, cursor)
+        cursor = { updatedAt: last.updated_at, id: last.id }
+        await setMeta(db, key, JSON.stringify(cursor))
       }
-      if (rows.length < pageSize || !avance) break
+      if (rows.length < pageSize) break
     }
   }
   return count

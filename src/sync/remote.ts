@@ -7,9 +7,17 @@ export interface UpsertResult {
   fatal: boolean // réseau ou session : inutile d'insister ligne par ligne
 }
 
+// Curseur de pagination du pull : clé composite (updated_at, id), strictement croissante.
+// Un simple updated_at ne suffit pas : si plus d'une page de lignes partage le même horodatage,
+// il faut départager avec l'id pour que le curseur avance toujours (voir fetchSince).
+export interface Cursor {
+  updatedAt: string
+  id: string
+}
+
 export interface RemoteApi {
   upsert(table: string, rows: Record<string, unknown>[]): Promise<UpsertResult>
-  fetchSince(table: string, cursor: string | null, limit: number): Promise<{ rows: ServerRow[]; error: string | null }>
+  fetchSince(table: string, cursor: Cursor | null, limit: number): Promise<{ rows: ServerRow[]; error: string | null }>
   fetchById(table: string, id: string): Promise<ServerRow | null>
 }
 
@@ -31,8 +39,20 @@ export function supabaseRemote(client: SupabaseClient): RemoteApi {
       return error ? { error: error.message, fatal: isFatal(error.code) } : { error: null, fatal: false }
     },
     async fetchSince(table, cursor, limit) {
-      let q = client.from(table).select('*').order('updated_at', { ascending: true }).limit(limit)
-      if (cursor) q = q.gte('updated_at', cursor)
+      let q = client
+        .from(table)
+        .select('*')
+        .order('updated_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit)
+      if (cursor) {
+        // Strictement après la clé composite : updated_at postérieur, ou updated_at égal et id supérieur.
+        // Les valeurs sont entre guillemets doubles car un horodatage contient des caractères (+, :)
+        // qui ont un sens dans la syntaxe de filtre PostgREST.
+        q = q.or(
+          `updated_at.gt."${cursor.updatedAt}",and(updated_at.eq."${cursor.updatedAt}",id.gt."${cursor.id}")`,
+        )
+      }
       const { data, error } = await q
       return { rows: (data ?? []) as ServerRow[], error: error?.message ?? null }
     },
