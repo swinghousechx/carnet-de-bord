@@ -24,7 +24,7 @@ describe('resolveVehicle', () => {
 })
 
 describe('kmTotal', () => {
-  it('prend le km saisi en priorité et double l\'aller-retour', () => {
+  it('prend le km saisi en priorité et double l’aller-retour', () => {
     expect(kmTotal(12.3, null, false)).toBe(12.3)
     expect(kmTotal(12.3, null, true)).toBe(24.6)
     expect(kmTotal(12.3, 14, true)).toBe(28)
@@ -52,7 +52,7 @@ describe('domicile–travail', () => {
     expect(isDomicileTravailCandidate('lmnp', 'domicile', 'swing_house')).toBe(false)
     expect(isDomicileTravailCandidate('swing_house', 'domicile', 'lmnp')).toBe(false)
   })
-  it('exclu par défaut, compté si le réglage de l\'année l\'inclut', () => {
+  it('exclu par défaut, compté si le réglage de l’année l’inclut', () => {
     const t = makeTrip({ nature: 'domicile_travail' })
     expect(tripCounts(t, fiscalSettings(2026, 'swing_house', []))).toBe(false)
     const fy = makeFiscalYear({ inclure_domicile_travail: true })

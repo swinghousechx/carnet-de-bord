@@ -44,7 +44,7 @@ export function normalizeMotif(m: string): string {
 export function validateMotif(motif: string): string | null {
   const t = motif.trim()
   if (t.length < MOTIF_MIN) return `Motif trop court (${MOTIF_MIN} caractères minimum) : qui, quoi, où.`
-  if (GENERIQUES.has(normalizeMotif(t))) return "Motif trop générique : précise l'objet du déplacement."
+  if (GENERIQUES.has(normalizeMotif(t))) return 'Motif trop générique : précise l’objet du déplacement.'
   return null
 }
 
