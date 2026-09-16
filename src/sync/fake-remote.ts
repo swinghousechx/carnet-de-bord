@@ -1,5 +1,9 @@
 import type { Cursor, RemoteApi, ServerRow } from './remote'
 
+// Forme d'un uuid Postgres (les 4 groupes hexadécimaux séparés par des tirets) : validation de
+// forme seulement, pas une implémentation complète du typage Postgres — inutile ici.
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // Faux Supabase en mémoire : horodate chaque écriture, peut refuser des ids ou simuler une coupure.
 export function fakeRemote() {
   const tables = new Map<string, Map<string, ServerRow>>()
@@ -20,6 +24,13 @@ export function fakeRemote() {
     },
     async fetchSince(name, cursor: Cursor | null, limit) {
       if (offline) return { rows: [], error: 'Failed to fetch' }
+      // Garde-fou ajouté après un bug réel passé inaperçu : la colonne `id` est un uuid en base,
+      // et ce double comparait auparavant les identifiants avec `>` sur des chaînes quelconques —
+      // il acceptait donc un curseur à id vide que le vrai Postgres rejette (22P02). On reproduit
+      // ce refus pour que le double reste fidèle sur ce point.
+      if (cursor && !UUID_SHAPE.test(cursor.id)) {
+        return { rows: [], error: `invalid input syntax for type uuid: "${cursor.id}"` }
+      }
       const apresCurseur = (r: ServerRow) =>
         !cursor ||
         r.updated_at > cursor.updatedAt ||

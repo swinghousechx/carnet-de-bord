@@ -4,8 +4,14 @@ import { SyncError, type Cursor, type RemoteApi } from './remote'
 
 type AnyLocal = Local<{ id: string }>
 
+// Identifiant de secours pour un curseur reconstitué sans id réel. La colonne `id` est de type
+// `uuid` en base (supabase/migrations/0001_schema.sql) : une chaîne vide n'est pas un uuid valide,
+// et Postgres refuse la comparaison avec l'erreur 22P02 (« invalid input syntax for type uuid »).
+// L'uuid nul, lui, est un uuid syntaxiquement valide et inférieur à tout id généré côté client.
+export const UUID_NUL = '00000000-0000-0000-0000-000000000000'
+
 // Le curseur mémorisé dans `meta` était autrefois un simple horodatage (chaîne). On l'accepte
-// encore sous cette ancienne forme, en le traitant comme (horodatage, identifiant vide) : cela
+// encore sous cette ancienne forme, en le traitant comme (horodatage, identifiant nul) : cela
 // évite de planter ou de tout re-télécharger pour les curseurs déjà enregistrés avant ce format.
 function parseCursor(raw: string | null): Cursor | null {
   if (raw == null) return null
@@ -13,12 +19,12 @@ function parseCursor(raw: string | null): Cursor | null {
     const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === 'object' && typeof (parsed as Cursor).updatedAt === 'string') {
       const c = parsed as Cursor
-      return { updatedAt: c.updatedAt, id: typeof c.id === 'string' ? c.id : '' }
+      return { updatedAt: c.updatedAt, id: typeof c.id === 'string' ? c.id : UUID_NUL }
     }
   } catch {
     // Pas du JSON : c'est l'ancien format, une chaîne d'horodatage brute.
   }
-  return { updatedAt: raw, id: '' }
+  return { updatedAt: raw, id: UUID_NUL }
 }
 
 // Tire les lignes modifiées depuis le dernier curseur, table par table.

@@ -4,7 +4,7 @@ import { countDirty, saveRow, setMeta } from '../db/repo'
 import { makeTrip, makeVehicle } from '../test/fixtures'
 import { createSyncEngine } from './engine'
 import { fakeRemote } from './fake-remote'
-import { pullAll } from './pull'
+import { pullAll, UUID_NUL } from './pull'
 import { pushDirty } from './push'
 import { SyncError } from './remote'
 
@@ -78,7 +78,9 @@ describe('pushDirty', () => {
 describe('pullAll', () => {
   it('importe les lignes serveur, pagine et mémorise le curseur', async () => {
     const r = fakeRemote()
-    for (let i = 0; i < 3; i++) r.put('trips', makeTrip())
+    // Id au format uuid (comme en production) : au-delà d'une page, le curseur mémorisé porte cet
+    // id et est retransmis au serveur — le double le valide désormais comme le ferait Postgres.
+    for (let i = 0; i < 3; i++) r.put('trips', makeTrip({ id: crypto.randomUUID() }))
     expect(await pullAll(db, r.api, 2)).toBeGreaterThanOrEqual(3)
     expect(await db.trips.count()).toBe(3)
     expect((await db.meta.get('cursor:trips'))?.value).toBeTruthy()
@@ -96,7 +98,8 @@ describe('pullAll', () => {
   it('plus de pageSize lignes partageant exactement le même updated_at sont toutes récupérées', async () => {
     const r = fakeRemote()
     const meme_horodatage = new Date(Date.UTC(2026, 8, 15, 12, 0, 0)).toISOString()
-    for (let i = 0; i < 5; i++) r.putAt('trips', makeTrip(), meme_horodatage)
+    // Id au format uuid : la pagination sur ce même horodatage renvoie ces id comme curseur.
+    for (let i = 0; i < 5; i++) r.putAt('trips', makeTrip({ id: crypto.randomUUID() }), meme_horodatage)
     expect(await pullAll(db, r.api, 2)).toBe(5)
     expect(await db.trips.count()).toBe(5)
   })
@@ -104,8 +107,8 @@ describe('pullAll', () => {
   it('exactement pageSize lignes partageant le dernier horodatage : la synchro se termine sans erreur', async () => {
     const r = fakeRemote()
     const meme_horodatage = new Date(Date.UTC(2026, 8, 15, 12, 0, 0)).toISOString()
-    r.putAt('trips', makeTrip(), meme_horodatage)
-    r.putAt('trips', makeTrip(), meme_horodatage)
+    r.putAt('trips', makeTrip({ id: crypto.randomUUID() }), meme_horodatage)
+    r.putAt('trips', makeTrip({ id: crypto.randomUUID() }), meme_horodatage)
     await expect(pullAll(db, r.api, 2)).resolves.toBe(2)
     expect(await db.trips.count()).toBe(2)
   })
@@ -116,14 +119,26 @@ describe('pullAll', () => {
     r.put('trips', t1)
     const stored1 = r.get('trips', t1.id)!
     // Simule un curseur mémorisé par l'ancien code : une simple chaîne d'horodatage, sans identifiant.
-    // Traité comme (horodatage, identifiant vide), il ne fait rien perdre : au pire il refait
+    // Traité comme (horodatage, identifiant nul), il ne fait rien perdre : au pire il refait
     // repasser les lignes de cet horodatage précis (idempotent), jamais tout l'historique.
     await setMeta(db, 'cursor:trips', stored1.updated_at)
     const t2 = makeTrip()
     r.putAt('trips', t2, stored1.updated_at) // même horodatage que le curseur déjà enregistré
+    const fetchSince = vi.spyOn(r.api, 'fetchSince')
     await expect(pullAll(db, r.api)).resolves.toBe(2)
     expect(await db.trips.get(t1.id)).toBeDefined()
     expect(await db.trips.get(t2.id)).toBeDefined()
+    // Le filtre transmis au serveur doit porter l'uuid nul, pas une chaîne vide : une colonne `id`
+    // de type uuid fait échouer Postgres sur `id.gt.""` (code 22P02).
+    expect(fetchSince).toHaveBeenCalledWith('trips', { updatedAt: stored1.updated_at, id: UUID_NUL }, expect.anything())
+  })
+
+  it('le double refuse un curseur dont l’identifiant n’a pas la forme d’un uuid (comme le vrai serveur)', async () => {
+    const r = fakeRemote()
+    r.put('trips', makeTrip())
+    const { rows, error } = await r.api.fetchSince('trips', { updatedAt: new Date(0).toISOString(), id: '' }, 10)
+    expect(rows).toEqual([])
+    expect(error).toMatch(/invalid input syntax for type uuid/)
   })
 })
 
