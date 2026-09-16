@@ -19,7 +19,7 @@ describe('computeAll', () => {
     expect(computeAll(data([t])).get(t.id)?.montant_bareme).toBe(63.6)
   })
 
-  it("l'ordre d'entrée ne change rien : les trajets sont chaînés par date", () => {
+  it('l’ordre d’entrée ne change rien : les trajets sont chaînés par date', () => {
     const tot = makeTrip({ km_total: 5000, date: '2026-03-01' })
     const tard = makeTrip({ km_total: 100, date: '2026-09-01' })
     const m = computeAll(data([tard, tot]))
@@ -34,7 +34,7 @@ describe('computeAll', () => {
     expect(sum(computeAll(data(trips)))).toBe(3537) // 6000 × 0,357 + 1395
   })
 
-  it("les trajets exportés restent figés et servent de base au cumul", () => {
+  it('les trajets exportés restent figés et servent de base au cumul', () => {
     const exporte = makeTrip({ km_total: 5000, date: '2026-10-01', statut: 'exporte', montant_bareme: 3180, export_id: 'e1' })
     const rouvert = makeTrip({ km_total: 100, date: '2026-09-01', statut: 'valide' })
     const m = computeAll(data([exporte, rouvert]))
@@ -58,7 +58,7 @@ describe('computeAll', () => {
     expect(m.get(lmnp.id)?.montant_bareme).toBe(1908)
   })
 
-  it("le cumul repart à zéro au 1er janvier ; barème de l'année suivante provisoire", () => {
+  it('le cumul repart à zéro au 1er janvier ; barème de l’année suivante provisoire', () => {
     const y1 = makeTrip({ km_total: 6000, date: '2026-12-01' })
     const y2 = makeTrip({ km_total: 100, date: '2027-01-05' })
     const c = computeAll(data([y1, y2])).get(y2.id)!
@@ -81,7 +81,7 @@ describe('computeAll', () => {
     expect(computeAll(data([dt], { fiscalYears: [fy] })).get(dt.id)?.montant_bareme).toBe(63.6)
   })
 
-  it("frais annexes toujours ajoutés, même en mode frais réels", () => {
+  it('frais annexes toujours ajoutés, même en mode frais réels', () => {
     const t = makeTrip({ km_total: 100 })
     const expenses = [makeExpense({ trip_id: t.id, montant: 5.2 }), makeExpense({ trip_id: t.id, type: 'parking', montant: 3 })]
     expect(computeAll(data([t], { expenses })).get(t.id)).toMatchObject({ montant_bareme: 63.6, frais: 8.2, total: 71.8 })
@@ -99,7 +99,7 @@ describe('computeAll', () => {
 })
 
 describe('cumulKm', () => {
-  it(`cumul du groupe jusqu'à une date, incluse ou non`, () => {
+  it('cumul du groupe jusqu’à une date, incluse ou non', () => {
     const d = data([
       makeTrip({ km_total: 100, date: '2026-09-01' }),
       makeTrip({ km_total: 50, date: '2026-09-20' }),
