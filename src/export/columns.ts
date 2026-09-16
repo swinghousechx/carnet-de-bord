@@ -1,0 +1,34 @@
+import { ACTIVITE_LABEL } from '../domain/types'
+import { decimalFr, formatDateCourte } from '../lib/format'
+import type { ExportData, LigneExport } from './build'
+
+export interface CsvColumn {
+  header: string
+  value: (l: LigneExport, d: ExportData, pourMemoire: boolean) => string
+}
+
+// Colonnes du CSV. SEUL fichier à modifier quand le comptable aura donné son format.
+export const CSV_COLUMNS: CsvColumn[] = [
+  { header: 'Date', value: (l) => formatDateCourte(l.date) },
+  { header: 'Activité', value: (_l, d) => ACTIVITE_LABEL[d.activite] },
+  { header: 'Motif', value: (l) => l.motif },
+  { header: 'Départ', value: (l) => l.depart },
+  { header: 'Arrivée', value: (l) => l.arrivee },
+  { header: 'Aller-retour', value: (l) => (l.aller_retour ? 'Oui' : 'Non') },
+  { header: 'Km', value: (l) => decimalFr(l.km, 1) },
+  {
+    header: 'Correction km',
+    value: (l) =>
+      l.km_saisi == null
+        ? ''
+        : `${decimalFr(l.km_saisi, 1)} au lieu de ${l.km_route == null ? '—' : decimalFr(l.km_route, 1)} : ${l.justif_km ?? ''}`,
+  },
+  { header: 'Véhicule', value: (l) => l.vehicule },
+  // Ligne pour mémoire (domicile–travail) : ni le barème ni les frais annexes ne sont remboursables.
+  { header: 'Barème (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.montant_bareme, 2) },
+  { header: 'Frais annexes (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.frais, 2) },
+  { header: 'Détail frais', value: (l) => l.frais_detail },
+  { header: 'Total (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.total, 2) },
+  { header: 'Nature', value: (_l, _d, pm) => (pm ? 'Domicile–travail (non remboursé)' : 'Déplacement professionnel') },
+  { header: 'Rattrapage', value: (l) => l.rattrapage ?? '' },
+]
