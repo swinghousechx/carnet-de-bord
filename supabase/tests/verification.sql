@@ -22,6 +22,12 @@ begin
     v_res := v_res || ' KO:insert_exporte';
   exception when sqlstate 'P0001' then v_res := v_res || ' ok:insert_exporte_refuse'; end;
 
+  begin
+    perform public.export_month('swing_house', '2026-09', 1, jsonb_build_array(jsonb_build_object('id', t1, 'montant_bareme', 6.36)),
+                                '{"km":10,"bareme":999.99,"frais":0,"total":999.99,"nb_trajets":1}', 2026, false);
+    v_res := v_res || ' KO:total_incoherent';
+  exception when sqlstate 'P0001' then v_res := v_res || ' ok:total_incoherent_refuse'; end;
+
   v_exp := public.export_month('swing_house', '2026-09', 1, jsonb_build_array(jsonb_build_object('id', t1, 'montant_bareme', 6.36)),
                                '{"km":10,"bareme":6.36,"frais":0,"total":6.36,"nb_trajets":1}', 2026, false);
   v_res := v_res || ' ok:export_v' || v_exp.version;
