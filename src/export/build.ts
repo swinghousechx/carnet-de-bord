@@ -1,0 +1,162 @@
+import { BENEFICIAIRE } from '../config'
+import { cumulKm, type CalcData, type TripCalc } from '../domain/chain'
+import { fiscalSettings, isExcludedDomicileTravail } from '../domain/rules'
+import { EXPENSE_LABEL, type Activite, type Energie, type ExportTotaux, type ModeFiscal, type Nature, type Trip } from '../domain/types'
+import { firstDayOfMonth, lastDayOfMonth, monthOf, yearOf } from '../lib/dates'
+import { formatEuro, formatMoisLong, round1, round2 } from '../lib/format'
+
+export const TITRES_EXPORT: Record<Activite, string> = {
+  swing_house: 'Swing House SAS — Note de frais kilométriques',
+  lmnp: "LMNP Nid de l'Aiguille (EI) — Frais de déplacement",
+}
+
+export interface LigneExport {
+  trip_id: string
+  date: string
+  motif: string
+  depart: string
+  arrivee: string
+  km: number
+  aller_retour: boolean
+  km_route: number | null
+  km_saisi: number | null
+  justif_km: string | null
+  montant_bareme: number
+  frais: number
+  frais_detail: string
+  total: number
+  rattrapage: string | null
+  vehicule: string
+  nature: Nature
+}
+
+export interface VehiculeExport {
+  nom: string
+  immatriculation: string
+  cv: number
+  energie: Energie
+  cumulAvant: number
+  cumulApres: number
+}
+
+export interface ExportData {
+  activite: Activite
+  mois: string
+  version: number
+  titre: string
+  beneficiaire: string
+  lignes: LigneExport[]
+  pourMemoire: LigneExport[]
+  totaux: ExportTotaux
+  vehicules: VehiculeExport[]
+  bareme_annee: number | null
+  bareme_provisoire: boolean
+  bareme_indisponible: boolean
+  mode: ModeFiscal
+  genere_le: string
+}
+
+export interface BuildArgs {
+  activite: Activite
+  mois: string
+  version: number
+  selection: Trip[] // résultat de tripsForExport ou tripsOfExport
+  data: CalcData
+  calc: Map<string, TripCalc>
+  genere_le: string
+}
+
+export function buildExportData(a: BuildArgs): ExportData {
+  const annee = yearOf(a.mois)
+  const settings = fiscalSettings(annee, a.activite, a.data.fiscalYears)
+  const vehicles = new Map(a.data.vehicles.map((v) => [v.id, v]))
+
+  const toLigne = (t: Trip): LigneExport => {
+    const c = a.calc.get(t.id)
+    const v = t.vehicle_id ? vehicles.get(t.vehicle_id) : undefined
+    const exps = a.data.expenses.filter((e) => !e.deleted_at && e.trip_id === t.id)
+    const excluded = isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, a.data.fiscalYears))
+    const montant = excluded ? 0 : (c?.montant_bareme ?? 0)
+    const frais = c?.frais ?? 0
+    return {
+      trip_id: t.id,
+      date: t.date,
+      motif: t.motif.trim(),
+      depart: t.depart_label,
+      arrivee: t.arrivee_label,
+      km: t.km_total ?? 0,
+      aller_retour: t.aller_retour,
+      km_route: t.km_route,
+      km_saisi: t.km_saisi,
+      justif_km: t.justif_km,
+      montant_bareme: montant,
+      frais,
+      frais_detail: exps.map((e) => `${EXPENSE_LABEL[e.type]} ${formatEuro(e.montant)}${e.note ? ` (${e.note})` : ''}`).join(' · '),
+      total: round2(montant + frais),
+      rattrapage: monthOf(t.date) !== a.mois ? formatMoisLong(monthOf(t.date)) : null,
+      vehicule: v ? `${v.nom} (${v.immatriculation}, ${v.cv} CV)` : '',
+      nature: t.nature ?? 'pro',
+    }
+  }
+
+  const lignes: LigneExport[] = []
+  const pourMemoire: LigneExport[] = []
+  for (const t of a.selection) {
+    const excluded = isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, a.data.fiscalYears))
+    ;(excluded ? pourMemoire : lignes).push(toLigne(t))
+  }
+
+  const bareme = round2(lignes.reduce((s, l) => s + l.montant_bareme, 0))
+  const frais = round2(lignes.reduce((s, l) => s + l.frais, 0))
+  const totaux: ExportTotaux = {
+    km: round1(lignes.reduce((s, l) => s + l.km, 0)),
+    bareme,
+    frais,
+    total: round2(bareme + frais),
+    nb_trajets: lignes.length,
+  }
+
+  const vehicleIds = [...new Set(a.selection.filter((t) => !pourMemoire.some((p) => p.trip_id === t.id)).map((t) => t.vehicle_id))]
+  const vehicules: VehiculeExport[] = vehicleIds.flatMap((id) => {
+    const v = id ? vehicles.get(id) : undefined
+    if (!v) return []
+    return [{
+      nom: v.nom,
+      immatriculation: v.immatriculation,
+      cv: v.cv,
+      energie: v.energie,
+      cumulAvant: cumulKm(a.data, v.id, a.activite, annee, firstDayOfMonth(a.mois), false),
+      cumulApres: cumulKm(a.data, v.id, a.activite, annee, lastDayOfMonth(a.mois), true),
+    }]
+  })
+
+  const calcs = lignes.map((l) => a.calc.get(l.trip_id)).filter((c): c is TripCalc => c != null && c.compte)
+
+  // Déterminer si un barème est indisponible (champ bareme_indisponible à true)
+  const bareme_indisponible = [...lignes, ...pourMemoire].some((l) => {
+    const calc = a.calc.get(l.trip_id)
+    return calc?.bareme_indisponible === true
+  })
+
+  return {
+    activite: a.activite,
+    mois: a.mois,
+    version: a.version,
+    titre: TITRES_EXPORT[a.activite],
+    beneficiaire: BENEFICIAIRE,
+    lignes,
+    pourMemoire,
+    totaux,
+    vehicules,
+    bareme_annee: calcs.find((c) => c.bareme_annee != null)?.bareme_annee ?? null,
+    bareme_provisoire: calcs.some((c) => c.provisoire),
+    bareme_indisponible,
+    mode: settings.mode,
+    genere_le: a.genere_le,
+  }
+}
+
+// Montants à figer côté serveur (toutes les lignes, pour mémoire compris).
+export function rpcTripsPayload(d: ExportData): { id: string; montant_bareme: number }[] {
+  return [...d.lignes, ...d.pourMemoire].map((l) => ({ id: l.trip_id, montant_bareme: l.montant_bareme }))
+}
