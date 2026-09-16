@@ -20,6 +20,7 @@ export interface TripCalc {
   compte: boolean // entre dans la chaîne du barème
   bareme_annee: number | null
   provisoire: boolean
+  bareme_indisponible: boolean // montant non calculable faute de barème exploitable pour ce trajet
 }
 
 export function groupKey(vehicleId: string, activite: Activite, annee: number): string {
@@ -55,6 +56,7 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
       compte,
       bareme_annee: set?.annee ?? null,
       provisoire: set?.provisoire ?? false,
+      bareme_indisponible: false,
     })
     if (compte) {
       const key = groupKey(t.vehicle_id!, t.activite, annee)
@@ -66,18 +68,37 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
     const first = members[0]
     const set = selectRateSet(yearOf(first.date), data.baremeYears, data.rates)
     const vehicle = vehicles.get(first.vehicle_id!)!
-    if (!set) continue
+    const aTraiter = members.filter((m) => m.statut !== 'exporte')
+    // Barème indisponible pour ce groupe (aucune année de barème) : rien à calculer, signalé.
+    if (!set) {
+      for (const t of aTraiter) {
+        const calc = out.get(t.id)!
+        out.set(t.id, { ...calc, montant_bareme: 0, total: calc.frais, bareme_indisponible: true })
+      }
+      continue
+    }
     try {
       const f = (D: number) => round2(baremeAmount(D, vehicle.cv, vehicle.energie, set))
       let C = members.filter((t) => t.statut === 'exporte').reduce((s, t) => s + t.km_total!, 0)
-      for (const t of members.filter((m) => m.statut !== 'exporte').sort(byDate)) {
+      const montants = new Map<string, number>()
+      for (const t of aTraiter.sort(byDate)) {
         const montant = round2(f(C + t.km_total!) - f(C))
         C += t.km_total!
+        montants.set(t.id, montant)
+      }
+      // Groupe calculé en entier avec succès : on applique tous les montants d'un coup.
+      for (const t of aTraiter) {
+        const montant = montants.get(t.id)!
         const calc = out.get(t.id)!
-        out.set(t.id, { ...calc, montant_bareme: montant, total: round2(montant + calc.frais) })
+        out.set(t.id, { ...calc, montant_bareme: montant, total: round2(montant + calc.frais), bareme_indisponible: false })
       }
     } catch {
-      // Barème incomplet pour ce CV : montants laissés à 0 (signalé dans Réglages).
+      // Barème incomplet pour ce CV (ex. ligne du barème supprimée depuis Réglages) : échec atomique,
+      // aucun montant partiel — tous les trajets non exportés du groupe repassent à 0 et sont signalés.
+      for (const t of aTraiter) {
+        const calc = out.get(t.id)!
+        out.set(t.id, { ...calc, montant_bareme: 0, total: calc.frais, bareme_indisponible: true })
+      }
     }
   }
   return out

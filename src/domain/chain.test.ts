@@ -96,6 +96,36 @@ describe('computeAll', () => {
     expect(m.get(t.id)).toMatchObject({ montant_bareme: 0, compte: false })
     expect(m.has(del.id)).toBe(false)
   })
+
+  it('barème incomplet pour la puissance fiscale du véhicule : groupe entier à 0 €, bareme_indisponible, aucun montant partiel', () => {
+    // Barème amputé de la tranche 5 CV (cas réel : ligne supprimée depuis Réglages).
+    const ratesSans5cv = rates.filter((r) => !(r.cv_min === 5 && r.cv_max === 5))
+    const a1 = makeTrip({ km_total: 100, vehicle_id: 'veh-A', date: '2026-03-01' })
+    const a2 = makeTrip({ km_total: 200, vehicle_id: 'veh-A', date: '2026-04-01' })
+    // Second groupe sain, même jeu de données, autre véhicule (4 CV, non affecté).
+    const b1 = makeTrip({ km_total: 100, vehicle_id: 'veh-B', date: '2026-12-20' })
+    const m = computeAll(data([a1, a2, b1], { rates: ratesSans5cv }))
+    expect(m.get(a1.id)).toMatchObject({ montant_bareme: 0, bareme_indisponible: true })
+    expect(m.get(a2.id)).toMatchObject({ montant_bareme: 0, bareme_indisponible: true })
+    expect(m.get(b1.id)).toMatchObject({ montant_bareme: 60.6, bareme_indisponible: false }) // 100 × 0,606
+  })
+
+  it('aucun barème disponible pour l’année : montants à 0 et bareme_indisponible', () => {
+    const t = makeTrip({ km_total: 100 })
+    const m = computeAll(data([t], { baremeYears: [] }))
+    expect(m.get(t.id)).toMatchObject({ montant_bareme: 0, bareme_indisponible: true })
+  })
+
+  it('trajet qui ne compte pas (domicile–travail exclu ou frais réels) : 0 € mais bareme_indisponible reste faux', () => {
+    const dt = makeTrip({ km_total: 100, nature: 'domicile_travail' })
+    const mDt = computeAll(data([dt]))
+    expect(mDt.get(dt.id)).toMatchObject({ montant_bareme: 0, bareme_indisponible: false })
+
+    const t = makeTrip({ km_total: 100 })
+    const fy = makeFiscalYear({ mode: 'frais_reels' })
+    const mReel = computeAll(data([t], { fiscalYears: [fy] }))
+    expect(mReel.get(t.id)).toMatchObject({ montant_bareme: 0, bareme_indisponible: false })
+  })
 })
 
 describe('cumulKm', () => {
