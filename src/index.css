@@ -92,3 +92,17 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Listes groupées : séparateur fin décalé de 16 px, comme sur iOS. */
+.ios-list > * + * {
+  position: relative;
+}
+.ios-list > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  border-top: 0.5px solid var(--sep);
+  pointer-events: none;
+}
