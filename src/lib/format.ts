@@ -49,3 +49,8 @@ export function formatJour(date: string): string {
 export function formatDateCourte(date: string): string {
   return date.split('-').reverse().join('/')
 }
+
+// Nombre + nom accordé, à la française : 0 et 1 au singulier (« 0 trajet », « 1 trajet », « 2 trajets »).
+export function nb(n: number, singulier: string, pluriel = `${singulier}s`): string {
+  return `${n} ${n > 1 ? pluriel : singulier}`
+}

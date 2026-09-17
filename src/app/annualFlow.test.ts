@@ -27,12 +27,12 @@ describe('vue annuelle du récap', () => {
   })
 
   it('ligne d’état : mois exportés, trajets non exportés et brouillons (en alerte) seulement s’ils existent', () => {
-    expect(annualCardStatus(d)).toEqual({ mois: '1 mois exporté(s) sur 2', alertes: ['1 trajet(s) non encore exporté(s)', '1 brouillon(s)'] })
+    expect(annualCardStatus(d)).toEqual({ mois: '1 mois exporté sur 2', alertes: ['1 trajet non encore exporté', '1 brouillon'] })
     const tout = prepareAnnual(app({ trips: [a.trips[0]], exports: [e] }), computeAll(app({ trips: [a.trips[0]], exports: [e] })), 'swing_house', 2026, 'x')
-    expect(annualCardStatus(tout)).toEqual({ mois: '1 mois exporté(s) sur 1', alertes: [] })
+    expect(annualCardStatus(tout)).toEqual({ mois: '1 mois exporté sur 1', alertes: [] })
   })
 
-  it('aucun trajet compté : pas de « 0 mois exporté(s) sur 0 »', () => {
+  it('aucun trajet compté : pas de « 0 mois exporté sur 0 »', () => {
     const vide = app()
     expect(annualCardStatus(prepareAnnual(vide, computeAll(vide), 'lmnp', 2026, 'x'))).toEqual({ mois: null, alertes: [] })
   })

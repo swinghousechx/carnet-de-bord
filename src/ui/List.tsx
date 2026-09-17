@@ -43,7 +43,7 @@ export function Row({ label, value, detail, onClick, chevron, tone = 'default', 
   )
   const cls = 'flex min-h-11 w-full items-center gap-3 px-4 text-left'
   return onClick ? (
-    <button type="button" onClick={onClick} className={`${cls} active:bg-fill`}>
+    <button type="button" onClick={onClick} className={`${cls} transition-colors duration-300 active:bg-fill active:duration-0`}>
       {inner}
     </button>
   ) : (

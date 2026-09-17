@@ -18,12 +18,12 @@ export function ActionSheet(props: {
 }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/40 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)]" onClick={props.onCancel}>
+    <div className="surface-elevated anim-fade fixed inset-0 z-50 flex items-end bg-black/40 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)]" onClick={props.onCancel}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={props.title ?? props.message ?? 'Confirmation'}
-        className="w-full space-y-2"
+        className="anim-rise w-full space-y-2"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="ios-list overflow-hidden rounded-[14px] bg-cell text-center">

@@ -15,7 +15,7 @@ export function Segmented<T extends string>(props: {
           aria-checked={o.value === props.value}
           disabled={props.disabled}
           onClick={() => props.onChange(o.value)}
-          className={`relative h-8 flex-1 rounded-[7px] text-[13px] font-medium transition-colors duration-200 before:absolute before:inset-x-0 before:-top-1.5 before:-bottom-1.5 before:content-[''] ${o.value === props.value ? 'bg-cell shadow-[0_3px_8px_rgba(0,0,0,0.12)]' : ''}`}
+          className={`relative h-8 flex-1 rounded-[7px] text-[13px] font-medium transition-colors duration-200 before:absolute before:inset-x-0 before:-top-1.5 before:-bottom-1.5 before:content-[''] ${o.value === props.value ? 'bg-segment shadow-[0_3px_8px_rgba(0,0,0,0.12)]' : ''}`}
         >
           {o.label}
         </button>

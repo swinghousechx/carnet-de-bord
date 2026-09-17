@@ -17,7 +17,7 @@ export function NavButton(props: { children: ReactNode; onClick: () => void; dis
       onClick={props.onClick}
       disabled={props.disabled}
       aria-label={props.label}
-      className={`flex min-h-11 min-w-11 items-center justify-center text-[17px] text-accent disabled:text-label3 ${props.bold ? 'font-semibold' : ''}`}
+      className={`flex min-h-11 min-w-11 items-center justify-center text-[17px] text-accent transition-opacity duration-150 active:opacity-40 disabled:text-label3 ${props.bold ? 'font-semibold' : ''}`}
     >
       {props.children}
     </button>

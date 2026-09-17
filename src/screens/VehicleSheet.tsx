@@ -5,7 +5,7 @@ import { newRow, saveRow, saveRows, softDelete } from '../db/repo'
 import type { Energie, Vehicle } from '../domain/types'
 import type { AppData } from '../hooks/useData'
 import { todayISO } from '../lib/dates'
-import { formatDateCourte } from '../lib/format'
+import { formatDateCourte, nb } from '../lib/format'
 import { TextRow } from '../ui/Field'
 import { Row, Section } from '../ui/List'
 import { Segmented } from '../ui/Segmented'
@@ -90,7 +90,7 @@ export default function VehicleSheet({ data, vehicleId, onClose }: VehicleSheetP
         <TextRow label="Fin" value={fin} onChange={setFin} type="date" />
       </Section>
       {existing && (
-        <Section footer={nbTrajets > 0 ? `Utilisé par ${nbTrajets} trajet(s) : suppression impossible.` : undefined}>
+        <Section footer={nbTrajets > 0 ? `Utilisé par ${nb(nbTrajets, 'trajet')} : suppression impossible.` : undefined}>
           <Row label="Supprimer le véhicule" tone={nbTrajets > 0 ? 'default' : 'destructive'} onClick={nbTrajets > 0 ? undefined : () => void remove()} />
         </Section>
       )}

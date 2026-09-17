@@ -3,7 +3,7 @@ import { homeSummary } from '../app/home'
 import { ACTIVITES, ACTIVITE_LABEL, type Trip } from '../domain/types'
 import type { AppData } from '../hooks/useData'
 import { prevMonth, todayISO } from '../lib/dates'
-import { formatJour, formatKm, formatMoisLong } from '../lib/format'
+import { formatJour, formatKm, formatMoisLong, nb } from '../lib/format'
 import { ActivityDot } from '../ui/ActivityDot'
 import { Banner } from '../ui/Banner'
 import { IconLock, IconPlus } from '../ui/icons'
@@ -19,7 +19,7 @@ export interface HomeProps {
 }
 
 function statusValue(t: Trip) {
-  if (t.statut === 'brouillon') return <span className="text-orange">Brouillon</span>
+  if (t.statut === 'brouillon') return <span className="text-warn">Brouillon</span>
   if (t.statut === 'exporte')
     return (
       <span className="inline-flex items-center gap-1">
@@ -55,13 +55,13 @@ export default function Home({ data, onOpenTrip, onGoto }: HomeProps) {
           {formatMoisLong(prevMonth(s.mois))} pas encore exporté : {s.nonExportes.map((a) => ACTIVITE_LABEL[a]).join(', ')}
         </Banner>
       )}
-      <Section footer={s.brouillons > 0 ? `${s.brouillons} brouillon(s) à compléter.` : undefined}>
+      <Section footer={s.brouillons > 0 ? `${nb(s.brouillons, 'brouillon')} à compléter.` : undefined}>
         {ACTIVITES.map((a) => (
           <Row
             key={a}
             leading={<ActivityDot activite={a} />}
             label={ACTIVITE_LABEL[a]}
-            detail={`${s.parActivite[a].nb} trajet(s)`}
+            detail={nb(s.parActivite[a].nb, 'trajet')}
             value={formatKm(s.parActivite[a].km)}
           />
         ))}
@@ -96,7 +96,19 @@ export default function Home({ data, onOpenTrip, onGoto }: HomeProps) {
           ))}
         </Section>
       ))}
-      {s.jours.length === 0 && <p className="px-8 pt-6 text-center text-[15px] text-label2">Aucun trajet ce mois-ci. Touche + pour en ajouter un.</p>}
+      {s.jours.length === 0 && (
+        <div className="px-8 pt-4 text-center">
+          <p className="text-[15px] text-label2">Aucun trajet ce mois-ci.</p>
+          <button
+            type="button"
+            onClick={() => onOpenTrip()}
+            className="mt-2 inline-flex min-h-11 items-center gap-1.5 px-3 text-[17px] text-accent transition-opacity duration-150 active:opacity-40"
+          >
+            <IconPlus className="size-5" />
+            Ajouter un trajet
+          </button>
+        </div>
+      )}
     </>
   )
 }

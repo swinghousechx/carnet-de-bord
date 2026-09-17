@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decimalFr, formatDateCourte, formatEuro, formatJour, formatKm, formatKmNombre, formatMoisLong, round1, round2 } from './format'
+import { decimalFr, formatDateCourte, formatEuro, formatJour, formatKm, formatKmNombre, formatMoisLong, nb, round1, round2 } from './format'
 
 describe('arrondis', () => {
   it('round2 arrondit au centime sans erreur flottante', () => {
@@ -35,5 +35,14 @@ describe('format', () => {
     expect(formatMoisLong('2026-09')).toBe('septembre 2026')
     expect(formatJour('2026-09-15')).toMatch(/15 sept/)
     expect(formatDateCourte('2026-09-15')).toBe('15/09/2026')
+  })
+})
+
+describe('nb', () => {
+  it('accorde au pluriel à partir de 2', () => {
+    expect(nb(0, 'trajet')).toBe('0 trajet')
+    expect(nb(1, 'trajet')).toBe('1 trajet')
+    expect(nb(2, 'trajet')).toBe('2 trajets')
+    expect(nb(3, 'modification refusée', 'modifications refusées')).toBe('3 modifications refusées')
   })
 })

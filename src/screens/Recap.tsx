@@ -12,7 +12,7 @@ import { FRAIS_NON_INCLUS, type ExportData } from '../export/build'
 import { makeExportFiles, shareOrDownload } from '../export/share'
 import { loadAppData, type AppData } from '../hooks/useData'
 import { nextMonth, nowISO, prevMonth, todayISO } from '../lib/dates'
-import { formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
+import { formatDateCourte, formatEuro, formatKm, formatMoisLong, nb } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
 import { ActivityDot } from '../ui/ActivityDot'
 import { Banner } from '../ui/Banner'
@@ -208,7 +208,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                     ? [`Exporté le ${formatDateCourte(e.created_at.slice(0, 10))} (v${e.version}), trajets verrouillés.`]
                     : [
                         display?.version && display.version > 1 ? `Rectificatif : version ${display.version}.` : '',
-                        rattrapages ? `${rattrapages} rattrapage(s) de mois antérieurs inclus.` : '',
+                        rattrapages ? `${nb(rattrapages, 'rattrapage')} de mois antérieurs inclus.` : '',
                         display?.bareme_provisoire ? 'Barème provisoire.' : '',
                       ]),
                   modeNote(display) ?? '',
@@ -219,11 +219,11 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
               <Row label="Distance" value={formatKm(totaux.km)} />
               <Row label={<span className="font-semibold">{TOTAL_TITRE}</span>} detail={TOTAL_NATURE[a]} value={<span className="font-semibold text-label">{formatEuro(totaux.bareme)}</span>} />
               {p.drafts.length > 0 && !e && (
-                <Row label={<span className="text-orange">{p.drafts.length} brouillon(s) à compléter</span>} onClick={() => onOpenTrip(p.drafts[0].id)} chevron />
+                <Row label={<span className="text-warn">{nb(p.drafts.length, 'brouillon')} à compléter</span>} onClick={() => onOpenTrip(p.drafts[0].id)} chevron />
               )}
               {trajetRows.length > 0 && (
                 <Row
-                  label={open === a ? 'Masquer les trajets' : `Voir les ${totaux.nb_trajets} trajet(s)${nbPourMemoire ? ` (+${nbPourMemoire} pour mémoire)` : ''}`}
+                  label={open === a ? 'Masquer les trajets' : `${totaux.nb_trajets > 1 ? `Voir les ${totaux.nb_trajets} trajets` : 'Voir le trajet'}${nbPourMemoire ? ` (+${nbPourMemoire} pour mémoire)` : ''}`}
                   tone="accent"
                   onClick={() => setOpen(open === a ? null : a)}
                 />
@@ -293,8 +293,8 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
         title={confirm ? `Exporter ${ACTIVITE_LABEL[confirm.activite]} — ${formatMoisLong(confirm.prepared.data.mois)}` : undefined}
         message={
           confirm
-            ? `${confirm.prepared.payload.length} trajet(s) seront verrouillés.` +
-              (confirm.draftsCount > 0 ? ` ${confirm.draftsCount} brouillon(s) partiront au prochain export (rattrapage).` : '')
+            ? `${nb(confirm.prepared.payload.length, 'trajet sera verrouillé', 'trajets seront verrouillés')}.` +
+              (confirm.draftsCount > 0 ? ` ${nb(confirm.draftsCount, 'brouillon partira', 'brouillons partiront')} au prochain export (rattrapage).` : '')
             : undefined
         }
         actions={[

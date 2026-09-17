@@ -92,7 +92,7 @@ export default function PlacePicker(props: {
       <div className="mx-4 mb-6 flex h-9 items-center gap-2 rounded-[10px] bg-fill px-2.5 text-label2">
         <IconSearch className="size-4" />
         <input
-          className="min-w-0 flex-1 bg-transparent text-label outline-none placeholder:text-label2"
+          className="min-w-0 flex-1 bg-transparent text-label outline-none"
           placeholder={canSearch ? 'Rechercher une adresse' : 'Recherche indisponible'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}

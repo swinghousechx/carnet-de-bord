@@ -10,7 +10,9 @@ export function RefusBanner({ onGoto }: { onGoto: (t: Tab) => void }) {
   if (sync.quarantined === 0) return null
   return (
     <Banner onClick={() => onGoto('settings')}>
-      {sync.quarantined} modification(s) refusée(s) par le serveur et ignorée(s) dans ce récap : voir Réglages.
+      {sync.quarantined > 1
+        ? `${sync.quarantined} modifications refusées par le serveur et ignorées dans ce récap : voir Réglages.`
+        : '1 modification refusée par le serveur et ignorée dans ce récap : voir Réglages.'}
     </Banner>
   )
 }

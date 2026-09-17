@@ -43,6 +43,8 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
   const [retry, setRetry] = useState(0)
   const [kmSaisi, setKmSaisi] = useState(f.km_saisi != null ? decimalFr(f.km_saisi, 1) : '')
   const [corriger, setCorriger] = useState(f.km_saisi != null)
+  // Motif validé à la sortie du champ (pas à chaque frappe) ; « À compléter » n'apparaît qu'ensuite,
+  // ou d'emblée pour un trajet déjà enregistré.
   const [motifTouche, setMotifTouche] = useState(false)
   const [askDoublon, setAskDoublon] = useState<{ force: boolean } | null>(null)
   const [askDelete, setAskDelete] = useState(false)
@@ -111,6 +113,8 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
   const candidat = isDomicileTravailCandidate(f.activite, roleOf(f.depart_place_id, data.places), roleOf(f.arrivee_place_id, data.places))
   const vehicle = resolveVehicle(f.date, data.vehicles)
   const motifError = motifTouche ? validateMotif(f.motif) : null
+  // Le motif a déjà son message sous le champ : pas de doublon dans « À compléter ».
+  const aCompleter = reasons.filter((r) => r !== motifError)
   const suggestions = recentMotifs(data.trips, f.id).filter((m) => m !== f.motif)
   const quickPlaces = [
     ...data.places.filter((p) => p.role),
@@ -232,7 +236,7 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
         </Section>
 
         <Section header="Motif" footer={motifError && <span className="text-red">{motifError}</span>}>
-          <TextAreaRow value={f.motif} onChange={(motif) => { set({ motif }); setMotifTouche(true) }} placeholder="Qui, quoi, où (ex. Rendez-vous fournisseur TrackMan à Annecy)" />
+          <TextAreaRow value={f.motif} onChange={(motif) => set({ motif })} onBlur={() => setMotifTouche(true)} placeholder="Qui, quoi, où (ex. Rendez-vous fournisseur TrackMan à Annecy)" />
         </Section>
         {!locked && suggestions.length > 0 && (
           <div className="no-scrollbar -mt-5 mb-6 flex gap-2 overflow-x-auto px-4 pb-1">
@@ -249,11 +253,11 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
       </fieldset>
 
       {!locked && calc.get(f.id)?.montant_negatif && (
-        <p className="mx-8 -mt-4 mb-6 text-[13px] text-orange">
+        <p className="mx-8 -mt-4 mb-6 text-[13px] text-warn">
           Montant barème négatif : le barème ou la puissance du véhicule a changé après un export. Vérifie avant d’exporter.
         </p>
       )}
-      {!locked && reasons.length > 0 && <p className="mx-8 -mt-4 mb-6 text-[13px] text-orange">À compléter : {reasons.join(' · ')}</p>}
+      {!locked && (existing || motifTouche) && aCompleter.length > 0 && <p className="mx-8 -mt-4 mb-6 text-[13px] text-warn">À compléter : {aCompleter.join(' · ')}</p>}
       {error && <p className="mx-8 mb-6 text-[13px] text-red">{error}</p>}
 
       {!locked && (

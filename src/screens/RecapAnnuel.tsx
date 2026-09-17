@@ -8,7 +8,7 @@ import { FRAIS_NON_INCLUS } from '../export/build'
 import { makeAnnualFiles, shareOrDownload } from '../export/share'
 import type { AppData } from '../hooks/useData'
 import { nowISO, todayISO, yearOf } from '../lib/dates'
-import { formatEuro, formatKm } from '../lib/format'
+import { formatEuro, formatKm, nb } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
 import { ActivityDot } from '../ui/ActivityDot'
 import { Banner } from '../ui/Banner'
@@ -68,7 +68,7 @@ export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnu
               }
               footer={
                 [
-                  d.pourMemoire.length ? `${d.pourMemoire.length} trajet(s) domicile–travail pour mémoire, non comptés.` : '',
+                  d.pourMemoire.length ? `${nb(d.pourMemoire.length, 'trajet domicile–travail pour mémoire, non compté', 'trajets domicile–travail pour mémoire, non comptés')}.` : '',
                   modeNote(d) ?? '',
                 ].filter(Boolean).join(' ') || undefined
               }
@@ -82,8 +82,8 @@ export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnu
               />
               {(statut.mois || statut.alertes.length > 0) && (
                 <Row
-                  label={statut.mois ?? <span className="text-orange">{statut.alertes.join(' · ')}</span>}
-                  detail={statut.mois && statut.alertes.length ? <span className="text-orange">{statut.alertes.join(' · ')}</span> : undefined}
+                  label={statut.mois ?? <span className="text-warn">{statut.alertes.join(' · ')}</span>}
+                  detail={statut.mois && statut.alertes.length ? <span className="text-warn">{statut.alertes.join(' · ')}</span> : undefined}
                 />
               )}
             </Section>

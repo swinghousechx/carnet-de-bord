@@ -10,7 +10,7 @@ import { ACTIVITES, ACTIVITE_LABEL, ROLE_LABEL, type Activite, type FiscalYear, 
 import type { AppData } from '../hooks/useData'
 import { useSyncState } from '../hooks/useSyncState'
 import { todayISO, yearOf } from '../lib/dates'
-import { formatDateCourte } from '../lib/format'
+import { formatDateCourte, nb } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
 import { Banner } from '../ui/Banner'
 import { Row, Section } from '../ui/List'
@@ -186,7 +186,7 @@ export default function Settings({ data, calc, onOpenVehicle, onOpenBareme }: Se
       <ActionSheet
         open={logout}
         title="Se déconnecter ?"
-        message={sync.pending > 0 ? `${sync.pending} modification(s) pas encore synchronisée(s) : elles restent sur ce téléphone.` : undefined}
+        message={sync.pending > 0 ? `${nb(sync.pending, 'modification pas encore synchronisée', 'modifications pas encore synchronisées')} : ${sync.pending > 1 ? 'elles restent' : 'elle reste'} sur ce téléphone.` : undefined}
         actions={[{ label: 'Se déconnecter', tone: 'destructive', onClick: () => void supabase?.auth.signOut().then(() => setLogout(false)) }]}
         onCancel={() => setLogout(false)}
       />

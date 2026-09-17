@@ -21,7 +21,7 @@ export type SheetState =
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
-  const [tab, setTab] = useState<Tab>('home')
+  const [tab, setTabState] = useState<Tab>('home')
   const [sheet, setSheet] = useState<SheetState>(null)
   const loaded = useData()
 
@@ -48,6 +48,11 @@ export default function App() {
   if (!session) return <Login />
 
   const { data, calc } = loaded
+  // Chaque onglet s'ouvre en haut (un seul défilement de fenêtre partagé entre les onglets).
+  const setTab = (t: Tab) => {
+    if (t !== tab) window.scrollTo(0, 0)
+    setTabState(t)
+  }
   const openTrip = (tripId?: string, prefill?: Partial<Trip>) => setSheet({ kind: 'trip', nonce: Date.now(), tripId, prefill })
 
   return (
