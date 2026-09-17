@@ -146,6 +146,8 @@ describe('récapitulatif annuel — contenu', () => {
     expect(TITRES_ANNUELS.lmnp(2026)).toBe('LMNP Nid de l’Aiguille (EI) — Récapitulatif annuel des frais de déplacement 2026')
     expect(DOC_SYNTHESE).toBe('Document de synthèse : ne remplace pas les notes mensuelles exportées.')
     expect(provisoireMention(d)).toBe('Provisoire : 1 trajet(s) non encore exporté(s), 1 brouillon(s) exclus.')
+    expect(provisoireMention({ ...d, brouillons: 0 })).toBe('Provisoire : 1 trajet(s) non encore exporté(s).')
+    expect(provisoireMention({ ...d, nonExportes: 0 })).toBe('Provisoire : 1 brouillon(s) exclus.')
     const entete = annualEntete(d)
     expect(entete.slice(0, 2)).toEqual([DOC_SYNTHESE, 'Provisoire : 1 trajet(s) non encore exporté(s), 1 brouillon(s) exclus.'])
     expect(entete).toContain('Véhicule : Golf - AB-123-CD - 5 CV - thermique')

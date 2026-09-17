@@ -167,7 +167,11 @@ export function buildAnnualData(a: AnnualArgs): AnnualData {
 
 export function provisoireMention(d: AnnualData): string | null {
   if (d.nonExportes === 0 && d.brouillons === 0) return null
-  return `Provisoire : ${d.nonExportes} trajet(s) non encore exporté(s), ${d.brouillons} brouillon(s) exclus.`
+  const parts = [
+    d.nonExportes > 0 ? `${d.nonExportes} trajet(s) non encore exporté(s)` : null,
+    d.brouillons > 0 ? `${d.brouillons} brouillon(s) exclus` : null,
+  ].filter(Boolean)
+  return `Provisoire : ${parts.join(', ')}.`
 }
 
 export function annualEntete(d: AnnualData): string[] {
