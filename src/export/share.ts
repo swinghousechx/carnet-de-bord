@@ -1,12 +1,20 @@
+import { ANNUAL_CSV_COLUMNS, renderAnnualPdf, type AnnualData } from './annual'
 import type { ExportData } from './build'
 import { toCsv } from './csv'
-import { exportFileName } from './filenames'
+import { annualFileName, exportFileName } from './filenames'
 import { renderPdf } from './pdf'
 
 export function makeExportFiles(d: ExportData): File[] {
   return [
     new File([renderPdf(d)], exportFileName(d, 'pdf'), { type: 'application/pdf' }),
     new File([toCsv(d)], exportFileName(d, 'csv'), { type: 'text/csv;charset=utf-8' }),
+  ]
+}
+
+export function makeAnnualFiles(d: AnnualData): File[] {
+  return [
+    new File([renderAnnualPdf(d)], annualFileName(d, 'pdf'), { type: 'application/pdf' }),
+    new File([toCsv(d, ANNUAL_CSV_COLUMNS)], annualFileName(d, 'csv'), { type: 'text/csv;charset=utf-8' }),
   ]
 }
 
