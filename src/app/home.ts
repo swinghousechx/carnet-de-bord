@@ -16,6 +16,16 @@ export interface HomeSummary {
 
 const byDateDesc = (a: Trip, b: Trip) => b.date.localeCompare(a.date) || b.created_at.localeCompare(a.created_at)
 
+// Un mois reste « à exporter » pour une activité s'il n'est pas déjà émis et qu'il reste des
+// trajets validés (rattrapages compris) ou des brouillons datés jusqu'à sa fin. Partagée entre
+// le bandeau de l'accueil et le mois par défaut de Récap, pour que les deux s'accordent toujours.
+export function monthNeedsExport(data: AppData, activite: Activite, mois: string): boolean {
+  return (
+    exportBlockReason(data.exports, activite, mois) == null &&
+    (tripsForExport(data.trips, data.exports, activite, mois).length > 0 || draftsForExport(data.trips, activite, mois).length > 0)
+  )
+}
+
 // Données de l'accueil : volontairement sans aucun montant en euros.
 export function homeSummary(data: AppData, today: string): HomeSummary {
   const mois = monthOf(today)
@@ -34,12 +44,7 @@ export function homeSummary(data: AppData, today: string): HomeSummary {
   // toujours d'accord (sinon un mois déjà exporté ('emis') resterait signalé pour un simple trajet
   // oublié après coup, ou un vieux brouillon isolé garderait le bandeau allumé indéfiniment).
   const moisPrecedent = prevMonth(mois)
-  const nonExportes = ACTIVITES.filter(
-    (a) =>
-      exportBlockReason(data.exports, a, moisPrecedent) == null &&
-      (tripsForExport(data.trips, data.exports, a, moisPrecedent).length > 0 ||
-        draftsForExport(data.trips, a, moisPrecedent).length > 0),
-  )
+  const nonExportes = ACTIVITES.filter((a) => monthNeedsExport(data, a, moisPrecedent))
   // Brouillons datés avant le mois en cours : invisibles dans `jours` (limité au mois en cours),
   // donc listés à part pour rester accessibles depuis l'accueil.
   const brouillonsAnciens = data.trips.filter((t) => t.statut === 'brouillon' && t.date < debutMois).sort(byDateDesc)
