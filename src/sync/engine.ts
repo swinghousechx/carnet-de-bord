@@ -48,12 +48,17 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
     }
     set({ status: 'syncing' })
     try {
-      const pushed = await pushDirty(opts.db, opts.remote)
+      const premier = await pushDirty(opts.db, opts.remote)
       await pullAll(opts.db, opts.remote)
       await opts.afterPull?.()
-      if ((await countDirty(opts.db)) > 0) await pushDirty(opts.db, opts.remote)
-      const verrous = pushed.rejected.filter((r) => r.code === CODE_VERROU).length
-      const enAttente = pushed.rejected.filter((r) => r.code !== CODE_VERROU)
+      const second = (await countDirty(opts.db)) > 0 ? await pushDirty(opts.db, opts.remote) : null
+      // Refus « verrou » : définitifs (version serveur rétablie), on cumule les deux envois sans
+      // doublon. Autres refus : la ligne reste à pousser et le dernier envoi fait foi (un refus levé
+      // au second envoi n'est plus une erreur, un refus apparu au second envoi en est une).
+      const verrous = new Set(
+        [...premier.rejected, ...(second?.rejected ?? [])].filter((r) => r.code === CODE_VERROU).map((r) => `${r.table}|${r.id}`),
+      ).size
+      const enAttente = (second ?? premier).rejected.filter((r) => r.code !== CODE_VERROU)
       const messages = [
         enAttente.length > 0 ? `${enAttente.length} modification(s) non synchronisée(s) : ${enAttente[0].error}` : '',
         verrous > 0 ? `${verrous} modification(s) refusée(s) par le serveur (trajet exporté ?)` : '',

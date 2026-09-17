@@ -264,6 +264,50 @@ describe('createSyncEngine', () => {
     expect(engine.getState().message).toMatch(/trajet exporté/)
   })
 
+  it('refus au premier envoi mais réussite au second (après le pull) : état final sans erreur', async () => {
+    const r = fakeRemote()
+    const v = makeVehicle()
+    r.failIds.set(v.id, { code: '40001', error: 'could not serialize access' })
+    const afterPull = vi.fn(async () => {
+      r.failIds.delete(v.id) // le conflit a disparu entre les deux envois
+    })
+    const engine = createSyncEngine({ db, remote: r.api, afterPull, isOnline: () => true })
+    await saveRow(db, 'vehicles', v)
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'idle', pending: 0, message: null })
+  })
+
+  it('refus au second envoi seulement (ligne écrite par afterPull) : signalé', async () => {
+    const r = fakeRemote()
+    const v = makeVehicle()
+    r.failIds.set(v.id, { code: '23P01', error: 'conflicting key value violates exclusion constraint' })
+    const afterPull = vi.fn(async () => {
+      if (!(await db.vehicles.get(v.id))) await saveRow(db, 'vehicles', v)
+    })
+    const engine = createSyncEngine({ db, remote: r.api, afterPull, isOnline: () => true })
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'error', pending: 1 })
+    expect(engine.getState().message).toMatch(/non synchronisée/)
+  })
+
+  it('verrou au premier envoi et erreur au second : les deux sont signalés, une seule fois chacun', async () => {
+    const r = fakeRemote()
+    const t = makeTrip({ statut: 'exporte' })
+    r.put('trips', t)
+    r.rejectIds.add(t.id)
+    const v = makeVehicle()
+    r.failIds.set(v.id, { code: '23P01', error: 'conflicting key value violates exclusion constraint' })
+    const afterPull = vi.fn(async () => {
+      if (!(await db.vehicles.get(v.id))) await saveRow(db, 'vehicles', v)
+    })
+    const engine = createSyncEngine({ db, remote: r.api, afterPull, isOnline: () => true })
+    await saveRow(db, 'trips', { ...t, statut: 'valide' })
+    await engine.syncNow()
+    const { status, message } = engine.getState()
+    expect(status).toBe('error')
+    expect(message).toMatch(/^1 modification\(s\) non synchronisée\(s\).* · 1 modification\(s\) refusée\(s\) par le serveur/)
+  })
+
   it('hors ligne : ne contacte pas le serveur', async () => {
     const r = fakeRemote()
     const spy = vi.spyOn(r.api, 'upsert')
