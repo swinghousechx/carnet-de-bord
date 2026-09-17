@@ -66,6 +66,21 @@ export default function Home({ data, onOpenTrip, onGoto }: HomeProps) {
           />
         ))}
       </Section>
+      {s.brouillonsAnciens.length > 0 && (
+        <Section header="Brouillons à terminer">
+          {s.brouillonsAnciens.map((t) => (
+            <Row
+              key={t.id}
+              leading={<ActivityDot activite={t.activite} />}
+              label={t.motif || 'Sans motif'}
+              detail={`${t.depart_label} → ${t.arrivee_label}${t.aller_retour ? ' · aller-retour' : ''}`}
+              value={statusValue(t)}
+              onClick={() => onOpenTrip(t.id)}
+              chevron
+            />
+          ))}
+        </Section>
+      )}
       {s.jours.map(([date, trips]) => (
         <Section key={date} header={formatJour(date)}>
           {trips.map((t) => (

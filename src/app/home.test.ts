@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData } from '../hooks/useData'
-import { makePlace, makeTrip, makeVehicle } from '../test/fixtures'
+import { makeExport, makePlace, makeTrip, makeVehicle } from '../test/fixtures'
 import { homeSummary } from './home'
 
 const base = (trips: AppData['trips'], extra: Partial<AppData> = {}): AppData => ({
@@ -30,5 +30,52 @@ describe('homeSummary', () => {
     expect(s.nonExportes).toEqual(['swing_house'])
     expect(s.brouillons).toBe(1)
     expect(s.aConfigurer).toBe(true)
+  })
+
+  it('ignore le mois précédent déjà exporté même avec un trajet oublié (pas de faux positif)', () => {
+    const s = homeSummary(
+      base([makeTrip({ date: '2026-08-20' })], {
+        exports: [makeExport({ activite: 'swing_house', mois: '2026-08', statut: 'emis', version: 1 })],
+      }),
+      '2026-09-15',
+    )
+    expect(s.nonExportes).toEqual([])
+  })
+
+  it('signale un trajet rouvert dans un export à rectifier', () => {
+    const exp = makeExport({ activite: 'swing_house', mois: '2026-08', statut: 'a_rectifier', version: 1 })
+    const s = homeSummary(
+      base([makeTrip({ date: '2026-08-20', statut: 'valide', export_id: null })], { exports: [exp] }),
+      '2026-09-15',
+    )
+    expect(s.nonExportes).toEqual(['swing_house'])
+  })
+
+  it("ne signale pas un trajet dont le statut est 'exporte'", () => {
+    const exp = makeExport({ activite: 'swing_house', mois: '2026-08', statut: 'emis', version: 1 })
+    const s = homeSummary(
+      base([makeTrip({ date: '2026-08-20', statut: 'exporte', export_id: exp.id })], { exports: [exp] }),
+      '2026-09-15',
+    )
+    expect(s.nonExportes).toEqual([])
+  })
+
+  it('gère la frontière janvier → décembre de l’année précédente', () => {
+    const s = homeSummary(base([makeTrip({ date: '2025-12-20', activite: 'lmnp' })]), '2026-01-15')
+    expect(s.nonExportes).toEqual(['lmnp'])
+  })
+
+  it('aConfigurer : faux si véhicule et domicile présents, vrai si le domicile seul manque', () => {
+    const complet = homeSummary(base([]), '2026-09-15')
+    expect(complet.aConfigurer).toBe(false)
+    const sansDomicile = homeSummary(base([], { places: [] }), '2026-09-15')
+    expect(sansDomicile.aConfigurer).toBe(true)
+  })
+
+  it('expose les brouillons antérieurs au mois en cours pour un accès direct', () => {
+    const vieux = makeTrip({ date: '2026-07-05', statut: 'brouillon', motif: 'Vieux brouillon oublié depuis juillet' })
+    const s = homeSummary(base([vieux, makeTrip({ date: '2026-09-05', statut: 'brouillon' })]), '2026-09-15')
+    expect(s.brouillonsAnciens.map((t) => t.id)).toEqual([vieux.id])
+    expect(s.brouillons).toBe(2)
   })
 })
