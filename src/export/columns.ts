@@ -1,10 +1,17 @@
 import { ACTIVITE_LABEL } from '../domain/types'
 import { decimalFr, formatDateCourte } from '../lib/format'
-import type { ExportData, LigneExport } from './build'
+import type { Activite, ModeFiscal } from '../domain/types'
+import type { LigneExport } from './build'
 
-export interface CsvColumn {
+// Ce dont une colonne a besoin du document (note mensuelle ou récapitulatif annuel).
+export interface CsvContext {
+  activite: Activite
+  mode: ModeFiscal
+}
+
+export interface CsvColumn<L extends LigneExport = LigneExport, D extends CsvContext = CsvContext> {
   header: string
-  value: (l: LigneExport, d: ExportData, pourMemoire: boolean) => string
+  value: (l: L, d: D, pourMemoire: boolean) => string
 }
 
 // Colonnes du CSV. SEUL fichier à modifier quand le comptable aura donné son format.

@@ -2,7 +2,8 @@ import { BENEFICIAIRE } from '../config'
 import { cumulKm, type CalcData, type TripCalc } from '../domain/chain'
 import { fiscalSettings, isExcludedDomicileTravail } from '../domain/rules'
 import {
-  type Activite, type Energie, type ExportCumul, type ExportRecord, type ExportTotaux, type ModeFiscal, type Nature, type Trip,
+  type Activite, type Energie, type ExportCumul, type ExportRecord, type ExportTotaux, type FiscalYear, type ModeFiscal, type Nature, type Trip,
+  type Vehicle,
 } from '../domain/types'
 import { firstDayOfMonth, lastDayOfMonth, monthOf, yearOf } from '../lib/dates'
 import { formatMoisLong, round1, round2 } from '../lib/format'
@@ -72,39 +73,53 @@ export interface BuildArgs {
   record?: ExportRecord
 }
 
+export interface LigneContext {
+  calc: Map<string, TripCalc>
+  vehicles: Map<string, Vehicle>
+  fiscalYears: FiscalYear[]
+}
+
+// Trajet domicile–travail exclu par le choix fiscal de son année : section « pour mémoire », 0 €.
+export function isPourMemoire(t: Trip, fiscalYears: FiscalYear[]): boolean {
+  return isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, fiscalYears))
+}
+
+// Ligne d'export d'un trajet (notes mensuelles et récapitulatif annuel). Montant : celui de la
+// chaîne (figé pour un trajet exporté), 0 pour une ligne pour mémoire.
+export function toLigneExport(t: Trip, ctx: LigneContext, rattrapage: string | null): LigneExport {
+  const c = ctx.calc.get(t.id)
+  const v = t.vehicle_id ? ctx.vehicles.get(t.vehicle_id) : undefined
+  const montant = isPourMemoire(t, ctx.fiscalYears) ? 0 : (c?.montant_bareme ?? 0)
+  return {
+    trip_id: t.id,
+    date: t.date,
+    motif: t.motif.trim(),
+    depart: t.depart_label,
+    arrivee: t.arrivee_label,
+    km: t.km_total ?? 0,
+    aller_retour: t.aller_retour,
+    km_route: t.km_route,
+    km_saisi: t.km_saisi,
+    justif_km: t.justif_km,
+    montant_bareme: montant,
+    rattrapage,
+    vehicule: v ? `${v.nom} (${v.immatriculation}, ${v.cv} CV)` : '',
+    nature: t.nature ?? 'pro',
+  }
+}
+
 export function buildExportData(a: BuildArgs): ExportData {
   const annee = yearOf(a.mois)
   const settings = fiscalSettings(annee, a.activite, a.data.fiscalYears)
   const vehicles = new Map(a.data.vehicles.map((v) => [v.id, v]))
 
-  const toLigne = (t: Trip): LigneExport => {
-    const c = a.calc.get(t.id)
-    const v = t.vehicle_id ? vehicles.get(t.vehicle_id) : undefined
-    const excluded = isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, a.data.fiscalYears))
-    const montant = excluded ? 0 : (c?.montant_bareme ?? 0)
-    return {
-      trip_id: t.id,
-      date: t.date,
-      motif: t.motif.trim(),
-      depart: t.depart_label,
-      arrivee: t.arrivee_label,
-      km: t.km_total ?? 0,
-      aller_retour: t.aller_retour,
-      km_route: t.km_route,
-      km_saisi: t.km_saisi,
-      justif_km: t.justif_km,
-      montant_bareme: montant,
-      rattrapage: monthOf(t.date) !== a.mois ? formatMoisLong(monthOf(t.date)) : null,
-      vehicule: v ? `${v.nom} (${v.immatriculation}, ${v.cv} CV)` : '',
-      nature: t.nature ?? 'pro',
-    }
-  }
+  const ctx: LigneContext = { calc: a.calc, vehicles, fiscalYears: a.data.fiscalYears }
+  const toLigne = (t: Trip) => toLigneExport(t, ctx, monthOf(t.date) !== a.mois ? formatMoisLong(monthOf(t.date)) : null)
 
   const lignes: LigneExport[] = []
   const pourMemoire: LigneExport[] = []
   for (const t of a.selection) {
-    const excluded = isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, a.data.fiscalYears))
-    ;(excluded ? pourMemoire : lignes).push(toLigne(t))
+    ;(isPourMemoire(t, a.data.fiscalYears) ? pourMemoire : lignes).push(toLigne(t))
   }
 
   const bareme = round2(lignes.reduce((s, l) => s + l.montant_bareme, 0))
