@@ -5,13 +5,13 @@ import { exportFileName } from './filenames'
 
 const ligne = (o: Partial<LigneExport> = {}): LigneExport => ({
   trip_id: 't1', date: '2026-09-10', motif: 'Réunion ; fournisseur "TrackMan"', depart: 'Domicile', arrivee: 'Annecy',
-  km: 84.5, aller_retour: true, km_route: 42.3, km_saisi: null, justif_km: null, montant_bareme: 53.74, frais: 4.6,
-  frais_detail: 'Péage 4,60 € (A40)', total: 58.34, rattrapage: null, vehicule: 'Golf (AB-123-CD, 5 CV)', nature: 'pro', ...o,
+  km: 84.5, aller_retour: true, km_route: 42.3, km_saisi: null, justif_km: null, montant_bareme: 53.74,
+  rattrapage: null, vehicule: 'Golf (AB-123-CD, 5 CV)', nature: 'pro', ...o,
 })
 
 const data = {
   activite: 'swing_house', mois: '2026-09', version: 1, lignes: [ligne()],
-  pourMemoire: [ligne({ trip_id: 't2', motif: 'Trajet habituel du matin', nature: 'domicile_travail', montant_bareme: 0, frais: 0, frais_detail: '', total: 0 })],
+  pourMemoire: [ligne({ trip_id: 't2', motif: 'Trajet habituel du matin', nature: 'domicile_travail', montant_bareme: 0 })],
 } as unknown as ExportData
 
 describe('csv', () => {
@@ -26,27 +26,20 @@ describe('csv', () => {
     const rows = csv.slice(1).trimEnd().split('\r\n')
     expect(rows).toHaveLength(3)
     expect(rows[1]).toContain('10/09/2026;Swing House;"Réunion ; fournisseur ""TrackMan""";Domicile;Annecy;Oui;84,5;')
-    expect(rows[1]).toContain(';53,74;4,60;Péage 4,60 € (A40);58,34;Déplacement professionnel;')
+    expect(rows[0]).toBe('Date;Activité;Motif;Départ;Arrivée;Aller-retour;Km;Correction km;Véhicule;Indemnité (€);Nature;Rattrapage')
+    expect(rows[1]).toContain(';Golf (AB-123-CD, 5 CV);53,74;Déplacement professionnel;')
     expect(rows[2]).toContain(';0,00;Domicile–travail (non remboursé);')
   })
-  it('met à zéro les colonnes monétaires (barème, frais annexes, total) des lignes pour mémoire, même si les frais annexes saisis sont non nuls', () => {
-    // Un trajet domicile–travail peut porter un péage/parking : ni le barème, ni ces frais
-    // annexes ne sont remboursables. Le CSV doit afficher 0,00 sur les trois colonnes monétaires,
-    // même si la ligne source porte encore un barème ou des frais non nuls.
-    const dataAvecFraisNonNuls = {
-      ...data,
-      pourMemoire: [ligne({ trip_id: 't2', motif: 'Trajet habituel du matin', nature: 'domicile_travail', montant_bareme: 12.5, frais: 4.6, frais_detail: 'Péage 4,60 € (A40)', total: 17.1 })],
-    } as unknown as ExportData
-    const csv = toCsv(dataAvecFraisNonNuls)
-    const rows = csv.slice(1).trimEnd().split('\r\n')
-    // Colonnes : ...Véhicule;Barème (€);Frais annexes (€);Détail frais;Total (€);Nature;...
-    expect(rows[2]).toContain(';0,00;0,00;Péage 4,60 € (A40);0,00;Domicile–travail (non remboursé);')
+  it('ligne pour mémoire : indemnité à 0, même si la ligne source porte un montant', () => {
+    const d2 = { ...data, pourMemoire: [ligne({ trip_id: 't2', nature: 'domicile_travail', montant_bareme: 12.5 })] } as unknown as ExportData
+    const rows = toCsv(d2).slice(1).trimEnd().split('\r\n')
+    expect(rows[2]).toContain(';0,00;Domicile–travail (non remboursé);')
   })
   it('mode frais réels : la colonne Nature précise que le barème n’est pas appliqué (montant 0 voulu)', () => {
-    const reel = { ...data, mode: 'frais_reels', lignes: [ligne({ montant_bareme: 0, total: 4.6 })] } as unknown as ExportData
+    const reel = { ...data, mode: 'frais_reels', lignes: [ligne({ montant_bareme: 0 })] } as unknown as ExportData
     const rows = toCsv(reel).slice(1).trimEnd().split('\r\n')
-    expect(rows[0].split(';')).toHaveLength(15) // format inchangé
-    expect(rows[1]).toContain(';0,00;4,60;Péage 4,60 € (A40);4,60;Déplacement professionnel (frais réels : barème non appliqué);')
+    expect(rows[0].split(';')).toHaveLength(12) // une ligne d'en-tête, puis une ligne par trajet
+    expect(rows[1]).toContain(';0,00;Déplacement professionnel (frais réels : barème non appliqué);')
     expect(rows[2]).toContain(';Domicile–travail (non remboursé);')
   })
   it('nom de fichier stable', () => {

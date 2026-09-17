@@ -16,12 +16,6 @@ export const ACTIVITE_LABEL: Record<Activite, string> = {
   lmnp: 'LMNP',
 }
 
-export const EXPENSE_LABEL: Record<ExpenseType, string> = {
-  peage: 'Péage',
-  parking: 'Parking',
-  autre: 'Autre',
-}
-
 export const ROLE_LABEL: Record<PlaceRole, string> = {
   domicile: 'Domicile',
   swing_house: 'Swing House',

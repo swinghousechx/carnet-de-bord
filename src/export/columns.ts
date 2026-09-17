@@ -24,11 +24,11 @@ export const CSV_COLUMNS: CsvColumn[] = [
         : `${decimalFr(l.km_saisi, 1)} au lieu de ${l.km_route == null ? '—' : decimalFr(l.km_route, 1)} : ${l.justif_km ?? ''}`,
   },
   { header: 'Véhicule', value: (l) => l.vehicule },
-  // Ligne pour mémoire (domicile–travail) : ni le barème ni les frais annexes ne sont remboursables.
-  { header: 'Barème (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.montant_bareme, 2) },
-  { header: 'Frais annexes (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.frais, 2) },
-  { header: 'Détail frais', value: (l) => l.frais_detail },
-  { header: 'Total (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.total, 2) },
+  // Seul montant : l'indemnité kilométrique. Péages et parkings ne figurent pas dans la note (réglés
+  // directement par l'entreprise, spec §6.4) ; la mention n'est pas ajoutée au CSV pour garder le
+  // format « une ligne d'en-tête puis une ligne par trajet » (elle figure dans le PDF).
+  // Ligne pour mémoire (domicile–travail) : non remboursable, donc 0.
+  { header: 'Indemnité (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.montant_bareme, 2) },
   // Mode frais réels (spec §6.4) : barème à 0 € voulu, précisé ici pour ne pas passer pour un oubli.
   {
     header: 'Nature',

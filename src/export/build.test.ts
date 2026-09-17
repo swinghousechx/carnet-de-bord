@@ -26,10 +26,11 @@ describe('buildExportData', () => {
     expect(d.lignes[0].rattrapage).toBe('août 2026')
     expect(d.lignes[1].rattrapage).toBeNull()
   })
-  it('détaille les frais et calcule les totaux', () => {
-    expect(d.lignes[1].frais_detail).toBe('Péage 4,60 € (A40)')
+  it('totaux : indemnités seules, frais à 0 (clé conservée pour le contrôle serveur)', () => {
+    expect(d.lignes[1]).not.toHaveProperty('frais')
+    expect(d.lignes[1]).not.toHaveProperty('frais_detail')
     expect(d.totaux).toEqual({
-      km: 150, bareme: 95.4, frais: 4.6, total: 100, nb_trajets: 2,
+      km: 150, bareme: 95.4, frais: 0, total: 95.4, nb_trajets: 2,
       cumuls: [{ vehicle_id: 'veh-A', avant: 300, apres: 350 }],
     })
   })
@@ -40,6 +41,14 @@ describe('buildExportData', () => {
     ])
     expect(d.bareme_annee).toBe(2026)
     expect(d.bareme_provisoire).toBe(false)
+  })
+  it('un péage déjà enregistré (ligne trip_expenses existante) ne change aucune ligne ni aucun total', () => {
+    const sansFrais: CalcData = { ...data, expenses: [] }
+    const d2 = buildExportData({
+      activite: 'swing_house', mois: '2026-09', version: 1, selection: [aout, sept, dt], data: sansFrais, calc: computeAll(sansFrais), genere_le: '2026-10-01',
+    })
+    expect(d).toEqual(d2)
+    expect(rpcTripsPayload(d)).toEqual(rpcTripsPayload(d2))
   })
   it('payload RPC : toutes les lignes, pour mémoire compris', () => {
     expect(rpcTripsPayload(d)).toEqual([

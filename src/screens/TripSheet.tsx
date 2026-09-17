@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { placeKey, shouldComputeRoute } from '../app/routeKm'
-import { draftFooter, emptyTrip, expenseChanges, finalizeTrip, nextStepPrefill, recentMotifs } from '../app/tripForm'
+import { draftFooter, emptyTrip, finalizeTrip, nextStepPrefill, recentMotifs } from '../app/tripForm'
 import { db } from '../db/db'
-import { newRow, saveRow, saveRows, softDelete } from '../db/repo'
+import { saveRow, saveRows, softDelete } from '../db/repo'
 import type { TripCalc } from '../domain/chain'
 import { findDuplicate, isDomicileTravailCandidate, missingReasons, resolveVehicle, roleOf, validateMotif } from '../domain/rules'
-import { ACTIVITE_LABEL, EXPENSE_LABEL, ROLE_LABEL, type Activite, type ExpenseType, type Nature, type Place, type Trip, type TripExpense } from '../domain/types'
+import { ACTIVITE_LABEL, ROLE_LABEL, type Activite, type Nature, type Place, type Trip } from '../domain/types'
 import { computeRouteKm, mapsConfigured } from '../geo/maps'
 import type { AppData } from '../hooks/useData'
 import { nowISO, todayISO } from '../lib/dates'
@@ -38,11 +38,6 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
   const existing = tripId ? data.trips.find((t) => t.id === tripId) : undefined
   const locked = existing?.statut === 'exporte'
   const [f, setF] = useState<Trip>(() => existing ?? emptyTrip(data, todayISO(), prefill))
-  const [expenses, setExpenses] = useState<TripExpense[]>(() => data.expenses.filter((e) => e.trip_id === f.id))
-  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
-    Object.fromEntries(expenses.map((e) => [e.id, decimalFr(e.montant, 2)])),
-  )
-  const [removed, setRemoved] = useState<string[]>([])
   const [picker, setPicker] = useState<'depart' | 'arrivee' | null>(null)
   const [kmState, setKmState] = useState<KmState>('idle')
   const [retry, setRetry] = useState(0)
@@ -130,9 +125,6 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
     }
     const trip = finalizeTrip({ ...draft, brouillon_force: force, doublon_confirme: f.doublon_confirme || doublonOk }, data)
     await saveRow(db, 'trips', trip)
-    const changes = expenseChanges(expenses, amounts, removed, new Set(data.expenses.map((x) => x.id)), trip.id)
-    if (changes.save.length) await saveRows(db, 'trip_expenses', changes.save)
-    for (const id of changes.remove) await softDelete(db, 'trip_expenses', id)
     const used = data.places.filter((p) => p.id === trip.depart_place_id || p.id === trip.arrivee_place_id)
     if (used.length) await saveRows(db, 'places', used.map((p) => ({ ...p, last_used_at: nowISO() })))
     if (existing) onClose()
@@ -141,7 +133,8 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
 
   async function remove() {
     if (!existing) return
-    for (const e of expenses) await softDelete(db, 'trip_expenses', e.id)
+    // Frais annexes éventuels d'avant leur retrait (spec §6.4) : supprimés avec le trajet.
+    for (const e of data.expenses.filter((x) => x.trip_id === existing.id)) await softDelete(db, 'trip_expenses', e.id)
     await softDelete(db, 'trips', existing.id)
     onClose()
   }
@@ -161,12 +154,6 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
     }
     await syncEngine?.syncNow()
     onClose()
-  }
-
-  function addExpense(type: ExpenseType) {
-    const e = newRow<TripExpense>({ trip_id: f.id, type, montant: 0, note: '' })
-    setExpenses((xs) => [...xs, e])
-    setAmounts((a) => ({ ...a, [e.id]: '' }))
   }
 
   if (saved) {
@@ -259,42 +246,6 @@ export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext
           <Row label={vehicle ? vehicle.nom : 'Aucun véhicule à cette date'} value={vehicle ? `${vehicle.cv} CV` : undefined} tone={vehicle ? 'default' : 'destructive'} />
         </Section>
 
-        <Section header="Frais annexes" footer="Péages et parkings s’ajoutent au barème. Garder le justificatif.">
-          {expenses.map((e) => (
-            <div key={e.id} className="space-y-1 px-4 py-2">
-              <div className="flex items-center gap-3">
-                <span className="flex-1">{EXPENSE_LABEL[e.type]}</span>
-                <input
-                  className="w-24 rounded-md bg-fill px-2 py-1 text-right tabular outline-none"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  value={amounts[e.id] ?? ''}
-                  onChange={(ev) => setAmounts((a) => ({ ...a, [e.id]: ev.target.value }))}
-                  aria-label={`Montant ${EXPENSE_LABEL[e.type]}`}
-                />
-                <span className="text-label2">€</span>
-                {!locked && (
-                  <button type="button" className="text-[15px] text-red" onClick={() => { setExpenses((xs) => xs.filter((x) => x.id !== e.id)); if (data.expenses.some((x) => x.id === e.id)) setRemoved((r) => [...r, e.id]) }}>
-                    Retirer
-                  </button>
-                )}
-              </div>
-              <input
-                className="w-full bg-transparent text-[15px] outline-none placeholder:text-label3"
-                placeholder="Note (ex. A40 sortie Sallanches)"
-                value={e.note}
-                onChange={(ev) => setExpenses((xs) => xs.map((x) => (x.id === e.id ? { ...x, note: ev.target.value } : x)))}
-              />
-            </div>
-          ))}
-          {!locked && (
-            <div className="flex gap-2 px-4 py-2">
-              {(['peage', 'parking', 'autre'] as ExpenseType[]).map((t) => (
-                <Chip key={t} label={`+ ${EXPENSE_LABEL[t]}`} onClick={() => addExpense(t)} />
-              ))}
-            </div>
-          )}
-        </Section>
       </fieldset>
 
       {!locked && calc.get(f.id)?.montant_negatif && (

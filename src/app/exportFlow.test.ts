@@ -6,7 +6,7 @@ import { CarnetDB, SYNC_TABLES } from '../db/db'
 import { saveRow } from '../db/repo'
 import { makeExpense, makeFiscalYear, makePlace } from '../test/fixtures'
 import {
-  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
+  defaultRecapMonth, FRAIS_NON_INCLUS, fileToShare, modeNote, TOTAL_LABEL, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
 } from './exportFlow'
 
 const { year, rates } = defaultBareme()
@@ -271,5 +271,15 @@ describe('montant négatif (avertissement, pas de blocage)', () => {
     expect(NEGATIF_AVERTISSEMENT).toMatch(/Un montant est négatif/)
     const normal = app({ trips: [exporte, reste], exports: [e] })
     expect(prepareExport(normal, computeAll(normal), 'swing_house', '2026-09', 'x').prepared?.data.montant_negatif).toBe(false)
+  })
+})
+
+describe('libellés du récap', () => {
+  it('indemnités kilométriques, sans tutoiement ; mention des péages et parkings', () => {
+    expect(TOTAL_LABEL).toEqual({
+      swing_house: 'Indemnités kilométriques à rembourser',
+      lmnp: 'Indemnités kilométriques (charge déductible)',
+    })
+    expect(FRAIS_NON_INCLUS).toBe('Péages et parkings non inclus : réglés directement par l’entreprise.')
   })
 })

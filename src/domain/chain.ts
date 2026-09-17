@@ -6,6 +6,8 @@ import type { Activite, BaremeRate, BaremeYear, FiscalYear, Trip, TripExpense, V
 
 export interface CalcData {
   trips: Trip[]
+  // Péages et parkings : réglés directement par l'entreprise et déjà en comptabilité, donc jamais
+  // ajoutés aux indemnités (spec §6.4). Les lignes éventuelles sont chargées mais ignorées du calcul.
   expenses: TripExpense[]
   vehicles: Vehicle[]
   fiscalYears: FiscalYear[]
@@ -13,10 +15,9 @@ export interface CalcData {
   rates: BaremeRate[]
 }
 
+// Montant d'un trajet = indemnité kilométrique (montant_bareme), seul montant de la note.
 export interface TripCalc {
   montant_bareme: number
-  frais: number
-  total: number
   compte: boolean // entre dans la chaîne du barème
   bareme_annee: number | null
   provisoire: boolean
@@ -52,10 +53,6 @@ export function countsInChain(t: Trip, fiscalYears: FiscalYear[], liveVehicleIds
 export function computeAll(data: CalcData): Map<string, TripCalc> {
   const out = new Map<string, TripCalc>()
   const vehicles = new Map(data.vehicles.filter((v) => !v.deleted_at).map((v) => [v.id, v]))
-  const frais = new Map<string, number>()
-  for (const e of data.expenses) {
-    if (!e.deleted_at) frais.set(e.trip_id, (frais.get(e.trip_id) ?? 0) + e.montant)
-  }
 
   const groups = new Map<string, Trip[]>()
   const liveVehicleIds = new Set(vehicles.keys())
@@ -64,12 +61,9 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
     const annee = yearOf(t.date)
     const set = selectRateSet(annee, data.baremeYears, data.rates)
     const compte = countsInChain(t, data.fiscalYears, liveVehicleIds)
-    const fraisTrip = round2(frais.get(t.id) ?? 0)
     const montant = t.statut === 'exporte' ? t.montant_bareme : 0
     out.set(t.id, {
       montant_bareme: montant,
-      frais: fraisTrip,
-      total: round2(montant + fraisTrip),
       compte,
       bareme_annee: set?.annee ?? null,
       provisoire: set?.provisoire ?? false,
@@ -91,7 +85,7 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
     if (!set) {
       for (const t of aTraiter) {
         const calc = out.get(t.id)!
-        out.set(t.id, { ...calc, montant_bareme: 0, total: calc.frais, bareme_indisponible: true })
+        out.set(t.id, { ...calc, montant_bareme: 0, bareme_indisponible: true })
       }
       continue
     }
@@ -115,16 +109,14 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
       for (const t of aTraiter) {
         const montant = montants.get(t.id)!
         const calc = out.get(t.id)!
-        out.set(t.id, {
-          ...calc, montant_bareme: montant, total: round2(montant + calc.frais), bareme_indisponible: false, montant_negatif: montant < 0,
-        })
+        out.set(t.id, { ...calc, montant_bareme: montant, bareme_indisponible: false, montant_negatif: montant < 0 })
       }
     } catch {
       // Barème incomplet pour ce CV (ex. ligne du barème supprimée depuis Réglages) : échec atomique,
       // aucun montant partiel — tous les trajets non exportés du groupe repassent à 0 et sont signalés.
       for (const t of aTraiter) {
         const calc = out.get(t.id)!
-        out.set(t.id, { ...calc, montant_bareme: 0, total: calc.frais, bareme_indisponible: true })
+        out.set(t.id, { ...calc, montant_bareme: 0, bareme_indisponible: true })
       }
     }
   }

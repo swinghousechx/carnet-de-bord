@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import { autoTable, type UserOptions } from 'jspdf-autotable'
 import { decimalFr, formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
-import type { ExportData, LigneExport } from './build'
+import { FRAIS_NON_INCLUS, type ExportData, type LigneExport } from './build'
 
 // Helvetica (police standard PDF) = encodage WinAnsi : on remplace ce qu'elle ne sait pas afficher.
 export function pdfText(s: string): string {
@@ -28,6 +28,30 @@ const BASE: Partial<UserOptions> = {
 
 const trajet = (l: LigneExport) => `${l.depart} - ${l.arrivee}${l.aller_retour ? ' (aller-retour)' : ''}`
 
+// En-tête (lignes de texte sous le titre).
+export function pdfEntete(d: ExportData): string[] {
+  return [
+    `Bénéficiaire : ${d.beneficiaire}`,
+    `Période : ${formatMoisLong(d.mois)}${d.version > 1 ? ` - version ${d.version}, annule et remplace la version ${d.version - 1}` : ''}`,
+    ...d.vehicules.map(
+      (v) =>
+        `Véhicule : ${v.nom} - ${v.immatriculation} - ${v.cv} CV - ${v.energie === 'electrique' ? 'électrique' : 'thermique'}` +
+        ` - cumul ${d.mois.slice(0, 4)} : ${formatKm(v.cumulAvant)} avant ce mois, ${formatKm(v.cumulApres)} en fin de mois`,
+    ),
+    d.mode === 'bareme'
+      ? `Barème kilométrique ${d.bareme_annee ?? '-'}${d.bareme_provisoire ? ' (provisoire : barème de l’année pas encore publié)' : ''}`
+      : 'Mode frais réels : coût du véhicule traité hors de cet état, barème non appliqué.',
+    FRAIS_NON_INCLUS,
+  ]
+}
+
+// Une seule colonne de montant : l'indemnité kilométrique.
+export const PDF_COLONNES = ['Date', 'Motif', 'Trajet', 'Km', 'Indemnité']
+
+export function pdfPiedTableau(d: ExportData): string[] {
+  return ['Total', `${d.totaux.nb_trajets} trajet(s)`, '', decimalFr(d.totaux.km, 1), formatEuro(d.totaux.bareme)]
+}
+
 export function renderPdf(d: ExportData): Blob {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
   const t = pdfText
@@ -38,18 +62,7 @@ export function renderPdf(d: ExportData): Blob {
   doc.setFontSize(15)
   doc.text(t(d.titre), M, 18)
 
-  const entete = [
-    `Bénéficiaire : ${d.beneficiaire}`,
-    `Période : ${formatMoisLong(d.mois)}${d.version > 1 ? ` - version ${d.version}, annule et remplace la version ${d.version - 1}` : ''}`,
-    ...d.vehicules.map(
-      (v) =>
-        `Véhicule : ${v.nom} - ${v.immatriculation} - ${v.cv} CV - ${v.energie === 'electrique' ? 'électrique' : 'thermique'}` +
-        ` - cumul ${d.mois.slice(0, 4)} : ${formatKm(v.cumulAvant)} avant ce mois, ${formatKm(v.cumulApres)} en fin de mois`,
-    ),
-    d.mode === 'bareme'
-      ? `Barème kilométrique ${d.bareme_annee ?? '-'}${d.bareme_provisoire ? ' (provisoire : barème de l’année pas encore publié)' : ''}`
-      : 'Mode frais réels : coût du véhicule traité hors de cet état ; seuls les frais annexes figurent ici.',
-  ]
+  const entete = pdfEntete(d)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   entete.forEach((s, i) => doc.text(t(s), M, 26 + i * 5))
@@ -58,7 +71,7 @@ export function renderPdf(d: ExportData): Blob {
     ...BASE,
     startY: 26 + entete.length * 5 + 3,
     showFoot: 'lastPage',
-    head: [['Date', 'Motif', 'Trajet', 'Km', 'Barème', 'Frais annexes', 'Total']],
+    head: [PDF_COLONNES],
     body: d.lignes.map((l) =>
       [
         formatDateCourte(l.date) + (l.rattrapage ? `\nrattrapage ${l.rattrapage}` : ''),
@@ -66,29 +79,15 @@ export function renderPdf(d: ExportData): Blob {
         trajet(l),
         decimalFr(l.km, 1),
         formatEuro(l.montant_bareme),
-        l.frais_detail ? `${formatEuro(l.frais)}\n${l.frais_detail}` : '',
-        formatEuro(l.total),
       ].map(t),
     ),
-    foot: [
-      [
-        'Total',
-        `${d.totaux.nb_trajets} trajet(s)`,
-        '',
-        decimalFr(d.totaux.km, 1),
-        formatEuro(d.totaux.bareme),
-        formatEuro(d.totaux.frais),
-        formatEuro(d.totaux.total),
-      ].map(t),
-    ],
+    foot: [pdfPiedTableau(d).map(t)],
     columnStyles: {
       0: { cellWidth: 24 },
-      1: { cellWidth: 80 },
-      2: { cellWidth: 70 },
+      1: { cellWidth: 110 },
+      2: { cellWidth: 89 },
       3: { cellWidth: 16, halign: 'right' },
-      4: { cellWidth: 22, halign: 'right' },
-      5: { cellWidth: 32, halign: 'right' },
-      6: { cellWidth: 22, halign: 'right' },
+      4: { cellWidth: 30, halign: 'right' },
     },
   })
 

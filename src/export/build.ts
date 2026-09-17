@@ -2,15 +2,19 @@ import { BENEFICIAIRE } from '../config'
 import { cumulKm, type CalcData, type TripCalc } from '../domain/chain'
 import { fiscalSettings, isExcludedDomicileTravail } from '../domain/rules'
 import {
-  EXPENSE_LABEL, type Activite, type Energie, type ExportCumul, type ExportRecord, type ExportTotaux, type ModeFiscal, type Nature, type Trip,
+  type Activite, type Energie, type ExportCumul, type ExportRecord, type ExportTotaux, type ModeFiscal, type Nature, type Trip,
 } from '../domain/types'
 import { firstDayOfMonth, lastDayOfMonth, monthOf, yearOf } from '../lib/dates'
-import { formatEuro, formatMoisLong, round1, round2 } from '../lib/format'
+import { formatMoisLong, round1, round2 } from '../lib/format'
 
 export const TITRES_EXPORT: Record<Activite, string> = {
   swing_house: 'Swing House SAS — Note de frais kilométriques',
   lmnp: 'LMNP Nid de l’Aiguille (EI) — Frais de déplacement',
 }
+
+// Péages et parkings : réglés directement par l'entreprise (badge, carte) et déjà en comptabilité ;
+// les ajouter ici les compterait deux fois (spec §6.4).
+export const FRAIS_NON_INCLUS = 'Péages et parkings non inclus : réglés directement par l’entreprise.'
 
 export interface LigneExport {
   trip_id: string
@@ -23,10 +27,7 @@ export interface LigneExport {
   km_route: number | null
   km_saisi: number | null
   justif_km: string | null
-  montant_bareme: number
-  frais: number
-  frais_detail: string
-  total: number
+  montant_bareme: number // indemnité kilométrique, seul montant de la ligne
   rattrapage: string | null
   vehicule: string
   nature: Nature
@@ -79,10 +80,8 @@ export function buildExportData(a: BuildArgs): ExportData {
   const toLigne = (t: Trip): LigneExport => {
     const c = a.calc.get(t.id)
     const v = t.vehicle_id ? vehicles.get(t.vehicle_id) : undefined
-    const exps = a.data.expenses.filter((e) => !e.deleted_at && e.trip_id === t.id)
     const excluded = isExcludedDomicileTravail(t, fiscalSettings(yearOf(t.date), t.activite, a.data.fiscalYears))
     const montant = excluded ? 0 : (c?.montant_bareme ?? 0)
-    const frais = c?.frais ?? 0
     return {
       trip_id: t.id,
       date: t.date,
@@ -95,9 +94,6 @@ export function buildExportData(a: BuildArgs): ExportData {
       km_saisi: t.km_saisi,
       justif_km: t.justif_km,
       montant_bareme: montant,
-      frais,
-      frais_detail: exps.map((e) => `${EXPENSE_LABEL[e.type]} ${formatEuro(e.montant)}${e.note ? ` (${e.note})` : ''}`).join(' · '),
-      total: round2(montant + frais),
       rattrapage: monthOf(t.date) !== a.mois ? formatMoisLong(monthOf(t.date)) : null,
       vehicule: v ? `${v.nom} (${v.immatriculation}, ${v.cv} CV)` : '',
       nature: t.nature ?? 'pro',
@@ -112,7 +108,6 @@ export function buildExportData(a: BuildArgs): ExportData {
   }
 
   const bareme = round2(lignes.reduce((s, l) => s + l.montant_bareme, 0))
-  const frais = round2(lignes.reduce((s, l) => s + l.frais, 0))
 
   const vehicleIds = [...new Set(a.selection.filter((t) => !pourMemoire.some((p) => p.trip_id === t.id)).map((t) => t.vehicle_id))]
   const figes = a.record?.totaux.cumuls
@@ -138,8 +133,10 @@ export function buildExportData(a: BuildArgs): ExportData {
   const totaux: ExportTotaux = {
     km: round1(lignes.reduce((s, l) => s + l.km, 0)),
     bareme,
-    frais,
-    total: round2(bareme + frais),
+    // Péages et parkings non inclus (spec §6.4) : frais toujours à 0, clé conservée pour le contrôle
+    // serveur (total = barème + frais) et les exports déjà émis.
+    frais: 0,
+    total: bareme,
     nb_trajets: lignes.length,
     // Transmis tel quel au serveur (p_totaux) : c'est ce qui rend un re-partage stable.
     cumuls: figes ?? cumuls,

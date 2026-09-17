@@ -81,12 +81,16 @@ describe('computeAll', () => {
     expect(computeAll(data([dt], { fiscalYears: [fy] })).get(dt.id)?.montant_bareme).toBe(63.6)
   })
 
-  it('frais annexes toujours ajoutés, même en mode frais réels', () => {
+  it('péages et parkings saisis (réglés par l’entreprise) : ignorés, aucun effet sur le calcul', () => {
     const t = makeTrip({ km_total: 100 })
     const expenses = [makeExpense({ trip_id: t.id, montant: 5.2 }), makeExpense({ trip_id: t.id, type: 'parking', montant: 3 })]
-    expect(computeAll(data([t], { expenses })).get(t.id)).toMatchObject({ montant_bareme: 63.6, frais: 8.2, total: 71.8 })
+    const avec = computeAll(data([t], { expenses }))
+    expect(avec).toEqual(computeAll(data([t])))
+    expect(avec.get(t.id)).toMatchObject({ montant_bareme: 63.6 })
+    expect(avec.get(t.id)).not.toHaveProperty('frais')
+    expect(avec.get(t.id)).not.toHaveProperty('total')
     const fy = makeFiscalYear({ mode: 'frais_reels' })
-    expect(computeAll(data([t], { expenses, fiscalYears: [fy] })).get(t.id)).toMatchObject({ montant_bareme: 0, total: 8.2 })
+    expect(computeAll(data([t], { expenses, fiscalYears: [fy] })).get(t.id)).toMatchObject({ montant_bareme: 0 })
   })
 
   it('km inconnus → 0 € et non compté ; trajets supprimés absents', () => {

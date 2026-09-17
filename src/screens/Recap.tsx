@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+  defaultRecapMonth, FRAIS_NON_INCLUS, fileToShare, modeNote, TOTAL_LABEL, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
@@ -38,7 +38,6 @@ interface Confirm {
 }
 
 const STATUT_LABEL: Record<ExportStatut, string> = { emis: 'Émis', a_rectifier: 'À rectifier', remplace: 'Remplacé' }
-const TOTAL_LABEL: Record<Activite, string> = { swing_house: 'À te verser', lmnp: 'Charge déductible' }
 const ZERO_TOTAUX = { km: 0, bareme: 0, frais: 0, total: 0, nb_trajets: 0 }
 
 export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
@@ -207,9 +206,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
             >
               <Row label="Trajets" value={totaux.nb_trajets} />
               <Row label="Distance" value={formatKm(totaux.km)} />
-              <Row label="Barème kilométrique" value={formatEuro(totaux.bareme)} />
-              <Row label="Péages, parkings" value={formatEuro(totaux.frais)} />
-              <Row label={<span className="font-semibold">{TOTAL_LABEL[a]}</span>} value={<span className="font-semibold text-label">{formatEuro(totaux.total)}</span>} />
+              <Row label={<span className="font-semibold">{TOTAL_LABEL[a]}</span>} value={<span className="font-semibold text-label">{formatEuro(totaux.bareme)}</span>} />
               {p.drafts.length > 0 && !e && (
                 <Row label={<span className="text-orange">{p.drafts.length} brouillon(s) à compléter</span>} onClick={() => onOpenTrip(p.drafts[0].id)} chevron />
               )}
@@ -226,7 +223,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                     key={x.id}
                     label={x.motif}
                     detail={`${formatDateCourte(x.date)} · ${formatKm(x.km_total)}${x.nature === 'domicile_travail' ? ' · domicile–travail' : ''}${!e && calc.get(x.id)?.montant_negatif ? ' · montant négatif' : ''}`}
-                    value={pourMemoire ? 'Pour mémoire' : formatEuro(ligne.total)}
+                    value={pourMemoire ? 'Pour mémoire' : formatEuro(ligne.montant_bareme)}
                     onClick={() => onOpenTrip(x.id)}
                     chevron
                   />
@@ -263,7 +260,14 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
         )
       })}
 
-      <Section footer={error && <span className="text-red">{error}</span>}>
+      <Section
+        footer={
+          <>
+            {error && <span className="block text-red">{error}</span>}
+            {FRAIS_NON_INCLUS}
+          </>
+        }
+      >
         <Row label={<span className="font-semibold">Total global</span>} value={<span className="font-semibold text-label">{formatEuro(global)}</span>} />
       </Section>
 
