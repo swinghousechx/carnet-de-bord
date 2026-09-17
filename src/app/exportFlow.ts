@@ -2,13 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { CarnetDB } from '../db/db'
 import { countDirty } from '../db/repo'
 import type { TripCalc } from '../domain/chain'
-import { ACTIVITES, type Activite, type ExportRecord, type Trip } from '../domain/types'
+import { type Activite, type ExportRecord, type Trip } from '../domain/types'
 import { buildExportData, rpcTripsPayload, type ExportData } from '../export/build'
 import { draftsForExport, exportBlockReason, nextVersion, tripsForExport, tripsOfExport } from '../export/select'
 import type { AppData } from '../hooks/useData'
-import { monthOf, prevMonth, yearOf } from '../lib/dates'
+import { monthOf, yearOf } from '../lib/dates'
 import type { SyncState } from '../sync/engine'
-import { monthNeedsExport } from './home'
+import { monthsBehind } from './retard'
 
 export interface PreparedExport {
   data: ExportData
@@ -126,24 +126,9 @@ export function modeNote(d: Pick<ExportData, 'mode'> | null): string | null {
   return d?.mode === 'frais_reels' ? 'Frais réels : barème non appliqué.' : null
 }
 
-// Mois par défaut ouvert par Récap : le mois précédent s'il reste, pour au moins une activité,
-// des trajets à exporter (même règle que le bandeau de l'accueil — voir monthNeedsExport) ; le
-// mois courant sinon.
+// Récap s'ouvre sur le plus ancien mois en retard (même règle que les bandeaux), sinon le mois en cours.
 export function defaultRecapMonth(app: AppData, today: string): string {
   const mois = monthOf(today)
-  const prev = prevMonth(mois)
-  const reste = ACTIVITES.some((a) => monthNeedsExport(app, a, prev))
-  return reste ? prev : mois
+  return monthsBehind(app, mois)[0]?.[0] ?? mois
 }
 
-// Mois antérieurs à `mois` qui ont encore des trajets validés non exportés ET qu'on peut encore
-// exporter (pas d'export émis pour ce mois) : le Récap propose de les exporter d'abord, pour que
-// chaque note corresponde à son mois plutôt que de partir en rattrapage. Du plus ancien au plus récent.
-export function earlierMonthsToExport(app: AppData, activite: Activite, mois: string): string[] {
-  const mois_ = new Set(
-    app.trips
-      .filter((t) => !t.deleted_at && t.activite === activite && t.statut === 'valide' && t.export_id == null && monthOf(t.date) < mois)
-      .map((t) => monthOf(t.date)),
-  )
-  return [...mois_].filter((m) => exportBlockReason(app.exports, activite, m) == null).sort()
-}

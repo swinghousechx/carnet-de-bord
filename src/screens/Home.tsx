@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import { homeSummary } from '../app/home'
+import { retardMessage } from '../app/retard'
 import { ACTIVITES, ACTIVITE_LABEL, type Trip } from '../domain/types'
 import type { AppData } from '../hooks/useData'
-import { prevMonth, todayISO } from '../lib/dates'
+import { todayISO } from '../lib/dates'
 import { formatJour, formatKm, formatMoisLong, nb } from '../lib/format'
 import { ActivityDot } from '../ui/ActivityDot'
 import { Banner } from '../ui/Banner'
@@ -50,11 +51,10 @@ export default function Home({ data, onOpenTrip, onGoto }: HomeProps) {
         }
       />
       {s.aConfigurer && <Banner onClick={() => onGoto('settings')}>Renseigner le véhicule et le domicile</Banner>}
-      {s.nonExportes.length > 0 && (
+      {s.enRetard.length > 0 && (
+        // Le Récap s'ouvre de lui-même sur le plus ancien de ces mois.
         <Banner onClick={() => onGoto('recap')}>
-          <span className="block first-letter:uppercase">
-            {formatMoisLong(prevMonth(s.mois))} pas encore exporté : {s.nonExportes.map((a) => ACTIVITE_LABEL[a]).join(', ')}
-          </span>
+          <span className="block first-letter:uppercase">{retardMessage(s.enRetard, s.mois)}</span>
         </Banner>
       )}
       <Section footer={s.brouillons > 0 ? `${nb(s.brouillons, 'brouillon')} à compléter.` : undefined}>

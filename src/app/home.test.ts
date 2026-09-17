@@ -27,7 +27,7 @@ describe('homeSummary', () => {
       base([makeTrip({ date: '2026-08-30' }), makeTrip({ date: '2026-09-01', statut: 'brouillon' })], { vehicles: [] }),
       '2026-09-15',
     )
-    expect(s.nonExportes).toEqual(['swing_house'])
+    expect(s.enRetard).toEqual([['2026-08', ['swing_house']]])
     expect(s.brouillons).toBe(1)
     expect(s.aConfigurer).toBe(true)
   })
@@ -39,7 +39,7 @@ describe('homeSummary', () => {
       }),
       '2026-09-15',
     )
-    expect(s.nonExportes).toEqual([])
+    expect(s.enRetard).toEqual([])
   })
 
   it('signale un trajet rouvert dans un export à rectifier', () => {
@@ -48,7 +48,7 @@ describe('homeSummary', () => {
       base([makeTrip({ date: '2026-08-20', statut: 'valide', export_id: null })], { exports: [exp] }),
       '2026-09-15',
     )
-    expect(s.nonExportes).toEqual(['swing_house'])
+    expect(s.enRetard).toEqual([['2026-08', ['swing_house']]])
   })
 
   it("ne signale pas un trajet dont le statut est 'exporte'", () => {
@@ -57,12 +57,17 @@ describe('homeSummary', () => {
       base([makeTrip({ date: '2026-08-20', statut: 'exporte', export_id: exp.id })], { exports: [exp] }),
       '2026-09-15',
     )
-    expect(s.nonExportes).toEqual([])
+    expect(s.enRetard).toEqual([])
+  })
+
+  it('signale aussi les mois plus anciens, du plus ancien au plus récent', () => {
+    const s = homeSummary(base([makeTrip({ date: '2026-08-06' }), makeTrip({ date: '2026-06-15' })]), '2026-09-15')
+    expect(s.enRetard).toEqual([['2026-06', ['swing_house']], ['2026-08', ['swing_house']]])
   })
 
   it('gère la frontière janvier → décembre de l’année précédente', () => {
     const s = homeSummary(base([makeTrip({ date: '2025-12-20', activite: 'lmnp' })]), '2026-01-15')
-    expect(s.nonExportes).toEqual(['lmnp'])
+    expect(s.enRetard).toEqual([['2025-12', ['lmnp']]])
   })
 
   it('aConfigurer : faux si véhicule et domicile présents, vrai si le domicile seul manque', () => {
