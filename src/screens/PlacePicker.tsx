@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createSuggestQueue } from '../app/placePicker'
 import { db } from '../db/db'
 import { newRow, saveRow } from '../db/repo'
 import { ROLE_LABEL, type Place, type PlaceRole } from '../domain/types'
@@ -10,7 +11,9 @@ import { Sheet } from '../ui/Sheet'
 
 const ROLE_ORDER: PlaceRole[] = ['domicile', 'swing_house', 'lmnp']
 
-// Anti-rebond de la recherche : requêtes Google facturées, une seule en vol à la fois.
+// Anti-rebond de la recherche : requêtes Google facturées, une seule en vol à la fois
+// (voir src/app/placePicker.ts : la file ne mémorise que la dernière requête tapée pendant
+// qu'un appel est en cours, et ne la relance qu'une fois celui-ci réglé).
 const SUGGEST_DEBOUNCE_MS = 300
 
 export default function PlacePicker(props: {
@@ -26,30 +29,30 @@ export default function PlacePicker(props: {
   const [error, setError] = useState<string | null>(null)
   const online = navigator.onLine
   const canSearch = mapsConfigured() && online
-  // Numéro de séquence : une réponse dont la requête n'est plus la dernière lancée est ignorée
-  // (ni résultats ni erreur appliqués), pour qu'une réponse en retard ne remplace jamais une plus récente.
-  const seqRef = useRef(0)
+
+  const queue = useMemo(
+    () =>
+      createSuggestQueue<Suggestion>({
+        suggest: (q) => session.suggest(q),
+        onResult: (r) => {
+          setResults(r)
+          setError(null)
+        },
+        onError: (e) => setError(e.message),
+      }),
+    [session],
+  )
 
   useEffect(() => {
     if (!canSearch || query.trim().length < 3) {
-      seqRef.current += 1
+      queue.reset()
       setResults([])
       setError(null)
       return
     }
-    const id = setTimeout(() => {
-      const seq = ++seqRef.current
-      session.suggest(query).then(
-        (r) => {
-          if (seq === seqRef.current) setResults(r)
-        },
-        (e: Error) => {
-          if (seq === seqRef.current) setError(e.message)
-        },
-      )
-    }, SUGGEST_DEBOUNCE_MS)
+    const id = setTimeout(() => queue.request(query), SUGGEST_DEBOUNCE_MS)
     return () => clearTimeout(id)
-  }, [query, canSearch, session])
+  }, [query, canSearch, queue])
 
   const favoris = ROLE_ORDER.flatMap((r) => props.places.filter((p) => p.role === r))
   const recents = props.places

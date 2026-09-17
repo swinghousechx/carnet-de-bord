@@ -119,7 +119,7 @@ export default function Settings({ data, calc, onOpenVehicle, onOpenBareme }: Se
           const s = fiscalSettings(annee, a, data.fiscalYears)
           const lock = verrouille(a)
           return (
-            <div key={a} className="space-y-2 px-4 py-3">
+            <div key={a} className="space-y-3 px-4 py-3">
               <div className="flex items-center justify-between">
                 <span>{ACTIVITE_LABEL[a]}</span>
                 {lock && <span className="text-[13px] text-label2">Verrouillé</span>}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { dayBefore, overlaps, tripsToReassign } from '../app/vehicles'
+import { dayBefore, overlaps, tripsToReassign, vehicleToClose } from '../app/vehicles'
 import { db } from '../db/db'
 import { newRow, saveRow, saveRows, softDelete } from '../db/repo'
 import type { Energie, Vehicle } from '../domain/types'
@@ -29,8 +29,9 @@ export default function VehicleSheet({ data, vehicleId, onClose }: VehicleSheetP
 
   const cvNum = Number(cv)
   const others = data.vehicles.filter((v) => v.id !== vehicleId)
-  // Nouveau véhicule : l'actuel (sans date de fin, plus ancien) est clôturé la veille automatiquement.
-  const aCloturer = !existing ? others.find((v) => v.date_fin == null && v.date_debut < debut) : undefined
+  // Nouveau véhicule sans date de fin (il devient le véhicule actuel) : l'actuel (sans date de
+  // fin, plus ancien) est clôturé la veille automatiquement.
+  const aCloturer = !existing ? vehicleToClose(others, debut, fin || null) : undefined
   const nbTrajets = existing ? data.trips.filter((t) => t.vehicle_id === existing.id).length : 0
 
   async function save() {
@@ -77,7 +78,13 @@ export default function VehicleSheet({ data, vehicleId, onClose }: VehicleSheetP
       </Section>
       <Section
         header="Période d’utilisation"
-        footer={aCloturer ? `« ${aCloturer.nom} » sera clôturé le ${formatDateCourte(dayBefore(debut))}.` : 'Date de fin vide = véhicule actuel.'}
+        footer={
+          aCloturer
+            ? `« ${aCloturer.nom} » sera clôturé le ${formatDateCourte(dayBefore(debut))}.`
+            : fin
+              ? undefined
+              : 'Date de fin vide = véhicule actuel.'
+        }
       >
         <TextRow label="Début" value={debut} onChange={setDebut} type="date" />
         <TextRow label="Fin" value={fin} onChange={setFin} type="date" />

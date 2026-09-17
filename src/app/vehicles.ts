@@ -16,6 +16,14 @@ export function overlaps(a: Periode, b: Periode): boolean {
   return a.date_debut <= finB && b.date_debut <= finA
 }
 
+// Le véhicule actuel (sans date de fin, plus ancien) doit-il être clôturé la veille du nouveau ?
+// Seulement si le nouveau véhicule n'a lui-même pas de date de fin : c'est alors lui qui devient
+// le véhicule actuel, et il ne peut y en avoir deux à la fois.
+export function vehicleToClose(vehicles: Vehicle[], debut: string, fin: string | null): Vehicle | undefined {
+  if (fin) return undefined
+  return vehicles.find((v) => v.date_fin == null && v.date_debut < debut)
+}
+
 // Après une modification des véhicules : trajets non exportés à rattacher à un autre véhicule.
 export function tripsToReassign(trips: Trip[], vehicles: Vehicle[], places: Place[]): Trip[] {
   return trips.flatMap((t) => {
