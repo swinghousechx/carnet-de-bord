@@ -135,11 +135,13 @@ Groupe = (véhicule, activité, année civile). Un trajet **compte** si : non su
 Pour chaque groupe :
 ```
 C ← somme des km_total des trajets exportés du groupe (montants figés, inchangés)
-pour chaque trajet non exporté qui compte, trié par (date, created_at) :
-    montant ← round2(f(C + km_total)) − round2(f(C))
+B ← somme des montant_bareme figés de ces trajets (ce qui a réellement été versé ; B ≠ round2(f(C)) en général)
+pour chaque trajet non exporté qui compte, trié par (date, created_at, id) :
+    montant ← round2(f(C + km_total)) − B      (non plafonné à 0)
     C ← C + km_total
+    B ← round2(f(C))
 ```
-`f(D)` = formule de la tranche contenant `D` pour le CV du véhicule, × (1 + majoration) si électrique. Propriété garantie et testée : **la somme des montants d'un groupe = round2(f(D_total))**, quel que soit l'ordre d'export ou les réouvertures (somme télescopique).
+`f(D)` = formule de la tranche contenant `D` pour le CV du véhicule, × (1 + majoration) si électrique. Propriété garantie et testée : **la somme des montants d'un groupe = round2(f(D_total))**, quel que soit l'ordre d'export ou les réouvertures (somme télescopique ; le premier trajet non exporté absorbe l'écart entre les montants figés et round2(f(C))). Si le barème ou le CV change après un export, le total vaut round2(f_nouveau(D_total)) ; le premier montant recalculé peut alors être négatif.
 Les brouillons comptent dans le calcul (vision « projetée ») ; seuls les trajets validés sont exportables.
 
 ### 6.3 Barème de l'année
