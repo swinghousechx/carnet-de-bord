@@ -5,7 +5,7 @@ export interface SheetProps {
   open: boolean
   title: string
   onCancel: () => void
-  cancelLabel?: string | null // null : pas de bouton à gauche (l'écran a sa propre sortie)
+  cancelLabel?: string | null // null : pas de bouton à gauche (l’écran a sa propre sortie)
   onConfirm?: () => void
   confirmLabel?: string
   confirmDisabled?: boolean

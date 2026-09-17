@@ -130,7 +130,7 @@ describe('garde-fou : pas d’écriture Dexie directe hors de src/db et src/sync
     expect(
       violations,
       `Écriture Dexie directe hors de src/db et src/sync (contourne saveRow/saveRows/softDelete) :\n${violations.join('\n')}\n` +
-        `→ Passe par saveRow/saveRows/softDelete (src/db/repo.ts) au lieu d'écrire dans Dexie directement.`,
+        `→ Passe par saveRow/saveRows/softDelete (src/db/repo.ts) au lieu d’écrire dans Dexie directement.`,
     ).toEqual([])
   })
 
