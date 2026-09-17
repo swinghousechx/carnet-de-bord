@@ -6,7 +6,7 @@ import { createSyncEngine } from './engine'
 import { fakeRemote } from './fake-remote'
 import { pullAll, UUID_NUL } from './pull'
 import { pushDirty } from './push'
-import { SyncError } from './remote'
+import { isFatal, SyncError } from './remote'
 
 let db: CarnetDB
 beforeEach(() => {
@@ -72,6 +72,93 @@ describe('pushDirty', () => {
     const res = await pushDirty(db, r.api)
     expect(res.rejected).toHaveLength(1)
     expect(await db.trips.get(t.id)).toMatchObject({ motif: 'Modifiée pendant l’isolement', _dirty: 1, _rev: 2 })
+  })
+})
+
+describe('pushDirty — erreurs non métier et changement de véhicule', () => {
+  it('erreur SQL autre que le verrou métier (P0001) : la ligne locale reste à pousser, intacte, et le refus est signalé', async () => {
+    const r = fakeRemote()
+    const t = makeTrip({ motif: 'Version serveur du trajet' })
+    r.put('trips', t)
+    r.failIds.set(t.id, { code: '23503', error: 'violates foreign key constraint' })
+    await saveRow(db, 'trips', { ...t, motif: 'Version locale à ne pas perdre' })
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toEqual([{ table: 'trips', id: t.id, error: 'violates foreign key constraint', code: '23503' }])
+    expect(await db.trips.get(t.id)).toMatchObject({ motif: 'Version locale à ne pas perdre', _dirty: 1 })
+  })
+
+  it('nouveau véhicule + clôture de l’ancien + trajets déplacés : l’ancien est clôturé avant l’insertion du nouveau', async () => {
+    const r = fakeRemote({ constraints: true })
+    // Ids choisis pour que l'ordre naturel (par id) pousse le nouveau véhicule en premier.
+    const ancien = makeVehicle({ id: 'ffffffff-0000-4000-8000-000000000001', nom: 'Ancienne', cv: 5, date_debut: '2020-01-01' })
+    r.put('vehicles', ancien)
+    const trajet = makeTrip({ id: 'aaaaaaaa-0000-4000-8000-000000000001', date: '2026-09-20', vehicle_id: ancien.id })
+    r.put('trips', trajet)
+    const nouveau = makeVehicle({ id: '00000000-0000-4000-8000-000000000002', nom: 'Nouvelle', cv: 7, date_debut: '2026-09-15' })
+    // Ce qu'écrit VehicleSheet : clôture de l'ancien, nouveau véhicule, trajets rattachés.
+    await saveRow(db, 'vehicles', { ...ancien, date_fin: '2026-09-14' })
+    await saveRow(db, 'vehicles', nouveau)
+    await saveRow(db, 'trips', { ...trajet, vehicle_id: nouveau.id })
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toEqual([])
+    expect(r.get('vehicles', ancien.id)).toMatchObject({ date_fin: '2026-09-14' })
+    expect(r.get('vehicles', nouveau.id)).toBeDefined()
+    expect(r.get('trips', trajet.id)).toMatchObject({ vehicle_id: nouveau.id })
+    expect(await db.trips.get(trajet.id)).toMatchObject({ vehicle_id: nouveau.id, _dirty: 0 })
+    expect(await countDirty(db)).toBe(0)
+  })
+
+  it('isolement ligne à ligne : même ordre (véhicules clôturés d’abord)', async () => {
+    const r = fakeRemote({ constraints: true })
+    const ancien = makeVehicle({ id: 'ffffffff-0000-4000-8000-000000000001', date_debut: '2020-01-01' })
+    r.put('vehicles', ancien)
+    const nouveau = makeVehicle({ id: '00000000-0000-4000-8000-000000000002', date_debut: '2026-09-15' })
+    const bloque = makeVehicle({ id: '11111111-0000-4000-8000-000000000003', date_debut: '2019-01-01', date_fin: '2019-06-30' })
+    r.failIds.set(bloque.id, { code: '42501', error: 'permission denied' }) // force le passage ligne à ligne
+    await saveRow(db, 'vehicles', { ...ancien, date_fin: '2026-09-14' })
+    await saveRow(db, 'vehicles', nouveau)
+    await saveRow(db, 'vehicles', bloque)
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected.map((x) => x.id)).toEqual([bloque.id])
+    expect(r.get('vehicles', nouveau.id)).toBeDefined()
+    expect(r.get('vehicles', ancien.id)).toMatchObject({ date_fin: '2026-09-14' })
+  })
+
+  it('véhicule refusé (chevauchement) : les trajets déplacés restent en local sur le nouveau véhicule, à pousser', async () => {
+    const r = fakeRemote({ constraints: true })
+    const ancien = makeVehicle({ id: 'ffffffff-0000-4000-8000-000000000001', date_debut: '2020-01-01' })
+    r.put('vehicles', ancien)
+    const trajet = makeTrip({ id: 'aaaaaaaa-0000-4000-8000-000000000001', date: '2026-09-20', vehicle_id: ancien.id })
+    r.put('trips', trajet)
+    // Nouveau véhicule poussé sans clôture de l'ancien (ex. clôture pas encore écrite) : 23P01 puis 23503.
+    const nouveau = makeVehicle({ id: '00000000-0000-4000-8000-000000000002', date_debut: '2026-09-15' })
+    await saveRow(db, 'vehicles', nouveau)
+    await saveRow(db, 'trips', { ...trajet, vehicle_id: nouveau.id })
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected.map((x) => x.code).sort()).toEqual(['23503', '23P01'])
+    expect(await db.trips.get(trajet.id)).toMatchObject({ vehicle_id: nouveau.id, _dirty: 1 })
+    expect(r.get('trips', trajet.id)).toMatchObject({ vehicle_id: ancien.id })
+  })
+})
+
+describe('isFatal', () => {
+  it.each([
+    [undefined, true], // pas de code : réseau
+    ['', true],
+    ['PGRST000', true], // base injoignable
+    ['PGRST003', true], // délai d'obtention d'une connexion
+    ['PGRST301', true], // session (JWT)
+    ['PGRST303', true],
+    ['57014', true], // statement timeout
+    ['08006', true], // connexion perdue
+    ['P0001', false], // verrou métier
+    ['23P01', false],
+    ['23503', false],
+    ['42501', false],
+    ['PGRST204', false], // colonne inconnue : refus de la ligne, pas une coupure
+    ['PGRST116', false],
+  ])('code %s → fatal = %s', (code, fatal) => {
+    expect(isFatal(code)).toBe(fatal)
   })
 })
 
@@ -152,6 +239,29 @@ describe('createSyncEngine', () => {
     expect(afterPull).toHaveBeenCalledOnce()
     expect(engine.getState()).toMatchObject({ status: 'idle', pending: 0, message: null })
     expect(engine.getState().lastSync).not.toBeNull()
+  })
+
+  it('modification gardée en attente après une erreur serveur : état en erreur, message explicite', async () => {
+    const r = fakeRemote()
+    const v = makeVehicle()
+    r.failIds.set(v.id, { code: '23P01', error: 'conflicting key value violates exclusion constraint' })
+    const engine = createSyncEngine({ db, remote: r.api, isOnline: () => true })
+    await saveRow(db, 'vehicles', v)
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'error', pending: 1 })
+    expect(engine.getState().message).toMatch(/non synchronisée/)
+  })
+
+  it('refus par verrou métier seul : état normal, message « trajet exporté ? »', async () => {
+    const r = fakeRemote()
+    const t = makeTrip({ statut: 'exporte' })
+    r.put('trips', t)
+    r.rejectIds.add(t.id)
+    const engine = createSyncEngine({ db, remote: r.api, isOnline: () => true })
+    await saveRow(db, 'trips', { ...t, statut: 'valide' })
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'idle', pending: 0 })
+    expect(engine.getState().message).toMatch(/trajet exporté/)
   })
 
   it('hors ligne : ne contacte pas le serveur', async () => {

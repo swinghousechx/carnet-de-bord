@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import type { CarnetDB } from '../db/db'
 import { db } from '../db/db'
 import { computeAll, type CalcData, type TripCalc } from '../domain/chain'
+import { effectiveStatut } from '../domain/rules'
 import type { ExportRecord, Place } from '../domain/types'
 
 export interface AppData extends CalcData {
@@ -27,8 +28,13 @@ export async function loadAppData(database: CarnetDB): Promise<AppData> {
     database.places.toArray(),
     database.exports.toArray(),
   ])
+  const ctx = { vehicles: alive(vehicles), places: alive(places) }
   return {
-    trips: alive(trips),
+    // Statut effectif (voir effectiveStatut) : tout l'écran et l'export voient le même statut.
+    trips: alive(trips).map((t) => {
+      const statut = effectiveStatut(t, ctx)
+      return statut === t.statut ? t : { ...t, statut }
+    }),
     expenses: alive(expenses),
     vehicles: alive(vehicles),
     fiscalYears: alive(fiscalYears),

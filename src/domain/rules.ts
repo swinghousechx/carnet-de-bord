@@ -91,7 +91,11 @@ export function missingReasons(trip: Trip, ctx: RuleCtx): string[] {
   if (trip.km_total == null) reasons.push('Km non calculés')
   const corrige = trip.km_saisi != null && (trip.km_route == null || trip.km_saisi !== trip.km_route)
   if (corrige && !trip.justif_km?.trim()) reasons.push('Justification des km corrigés manquante')
-  if (!resolveVehicle(trip.date, ctx.vehicles)) reasons.push('Aucun véhicule à cette date')
+  const vehicule = resolveVehicle(trip.date, ctx.vehicles)
+  if (!vehicule) reasons.push('Aucun véhicule à cette date')
+  // Filet de sécurité : le véhicule enregistré doit être celui de la date (sinon le barème serait
+  // calculé avec la mauvaise puissance fiscale). Réenregistrer le trajet le rattache correctement.
+  else if (trip.vehicle_id !== vehicule.id) reasons.push('Véhicule à vérifier')
   const candidat = isDomicileTravailCandidate(
     trip.activite,
     roleOf(trip.depart_place_id, ctx.places),
@@ -104,6 +108,15 @@ export function missingReasons(trip: Trip, ctx: RuleCtx): string[] {
 export function computeStatut(trip: Trip, ctx: RuleCtx): Statut {
   if (trip.statut === 'exporte') return 'exporte'
   if (trip.brouillon_force) return 'brouillon'
+  return missingReasons(trip, ctx).length === 0 ? 'valide' : 'brouillon'
+}
+
+// Statut à retenir à la lecture. Un trajet stocké « valide » qui ne passe plus les règles (ex. remis
+// sur un autre véhicule que celui de sa date par une synchro) est traité comme un brouillon :
+// il n'est pas exportable et apparaît dans les brouillons à compléter. Jamais de promotion
+// brouillon → valide ici : le serveur n'exporte que les trajets qu'il sait « valide ».
+export function effectiveStatut(trip: Trip, ctx: RuleCtx): Statut {
+  if (trip.statut !== 'valide') return trip.statut
   return missingReasons(trip, ctx).length === 0 ? 'valide' : 'brouillon'
 }
 

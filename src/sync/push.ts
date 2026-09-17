@@ -1,10 +1,11 @@
 import { SYNC_TABLES, type CarnetDB, type Local } from '../db/db'
-import { SyncError, type RemoteApi, type ServerRow } from './remote'
+import { CODE_VERROU, SyncError, type RemoteApi, type ServerRow } from './remote'
 
 export interface Rejection {
   table: string
   id: string
   error: string
+  code: string | null // P0001 = verrou métier (version serveur rétablie) ; sinon la ligne reste à pousser
 }
 
 export interface PushResult {
@@ -45,11 +46,25 @@ async function replaceWithServerIfUnchanged(db: CarnetDB, table: string, row: An
   })
 }
 
+// Ordre d'envoi au sein d'une table. Pour `vehicles`, la contrainte d'exclusion
+// vehicles_sans_chevauchement est vérifiée ligne par ligne : il faut d'abord libérer les périodes
+// (suppressions logiques, puis véhicules clôturés, qui ont une date de fin) avant d'insérer ou
+// d'étendre un véhicule sans date de fin. Sinon, un changement de voiture poussé dans le désordre
+// échoue (23P01), puis les trajets déplacés échouent à leur tour (clé étrangère, 23503).
+export function pushOrder<T extends AnyLocal>(table: string, rows: T[]): T[] {
+  if (table !== 'vehicles') return rows
+  const rank = (r: T) => {
+    const v = r as unknown as { deleted_at: string | null; date_fin: string | null }
+    return v.deleted_at != null ? 0 : v.date_fin != null ? 1 : 2
+  }
+  return [...rows].sort((a, b) => rank(a) - rank(b))
+}
+
 export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushResult> {
   const result: PushResult = { pushed: 0, rejected: [] }
   for (const table of SYNC_TABLES) {
     const tbl = db.table<AnyLocal, string>(table)
-    const dirty = await tbl.where('_dirty').equals(1).toArray()
+    const dirty = pushOrder(table, await tbl.where('_dirty').equals(1).toArray())
     if (dirty.length === 0) continue
 
     const batch = await remote.upsert(table, dirty.map(toServer))
@@ -69,9 +84,15 @@ export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushRe
         continue
       }
       if (one.fatal) throw new SyncError(one.error, true)
-      const server: ServerRow | null = await remote.fetchById(table, row.id)
-      if (server) await replaceWithServerIfUnchanged(db, table, row, server)
-      result.rejected.push({ table, id: row.id, error: one.error })
+      // Seul le verrou métier (ligne exportée) justifie de rétablir la version serveur. Toute autre
+      // erreur (contrainte, clé étrangère, droits…) peut venir d'un ordre d'envoi ou d'un état
+      // transitoire : écraser la saisie locale ferait perdre une modification (ex. trajets remis
+      // sur l'ancien véhicule). La ligne reste donc à pousser et le refus est signalé.
+      if (one.code === CODE_VERROU) {
+        const server: ServerRow | null = await remote.fetchById(table, row.id)
+        if (server) await replaceWithServerIfUnchanged(db, table, row, server)
+      }
+      result.rejected.push({ table, id: row.id, error: one.error, code: one.code })
     }
   }
   return result

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { makeFiscalYear, makePlace, makeTrip, makeVehicle } from '../test/fixtures'
 import {
-  computeStatut, findDuplicate, fiscalSettings, isDomicileTravailCandidate, kmTotal,
+  computeStatut, effectiveStatut, findDuplicate, fiscalSettings, isDomicileTravailCandidate, kmTotal,
   missingReasons, resolveVehicle, tripCounts, validateMotif,
 } from './rules'
 
@@ -83,6 +83,23 @@ describe('statut', () => {
   })
   it('aucun véhicule à la date → brouillon', () => {
     expect(missingReasons(makeTrip({ date: '2019-01-01' }), ctx)).toContain('Aucun véhicule à cette date')
+  })
+  it('véhicule enregistré différent de celui de la date → « Véhicule à vérifier », brouillon', () => {
+    const t = makeTrip({ date: '2026-12-20', vehicle_id: 'veh-A' }) // la date relève de veh-B
+    expect(missingReasons(t, ctx)).toContain('Véhicule à vérifier')
+    expect(computeStatut(t, ctx)).toBe('brouillon')
+    expect(missingReasons({ ...t, vehicle_id: 'veh-B' }, ctx)).not.toContain('Véhicule à vérifier')
+    // Aucun véhicule à la date : un seul motif, pas de doublon.
+    const sans = missingReasons(makeTrip({ date: '2019-01-01', vehicle_id: 'veh-A' }), ctx)
+    expect(sans).toContain('Aucun véhicule à cette date')
+    expect(sans).not.toContain('Véhicule à vérifier')
+  })
+  it('statut effectif : un trajet « valide » devenu incomplet est traité en brouillon, jamais l’inverse', () => {
+    const mauvais = makeTrip({ date: '2026-12-20', vehicle_id: 'veh-A', statut: 'valide' })
+    expect(effectiveStatut(mauvais, ctx)).toBe('brouillon')
+    expect(effectiveStatut({ ...mauvais, vehicle_id: 'veh-B' }, ctx)).toBe('valide')
+    expect(effectiveStatut(makeTrip({ statut: 'brouillon' }), ctx)).toBe('brouillon') // pas de promotion
+    expect(effectiveStatut({ ...mauvais, statut: 'exporte' }, ctx)).toBe('exporte') // figé
   })
   it('« Finir plus tard » force le brouillon ; exporté reste exporté', () => {
     expect(computeStatut(makeTrip({ brouillon_force: true }), ctx)).toBe('brouillon')

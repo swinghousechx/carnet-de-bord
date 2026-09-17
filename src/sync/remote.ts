@@ -4,8 +4,13 @@ export type ServerRow = Record<string, unknown> & { id: string; updated_at: stri
 
 export interface UpsertResult {
   error: string | null
+  code: string | null // SQLSTATE Postgres (ex. P0001) ou code PostgREST (PGRST…) ; null si absent
   fatal: boolean // réseau ou session : inutile d'insister ligne par ligne
 }
+
+// Refus métier explicite (verrou d'un trajet exporté, levé par nos triggers et RPC) : seul cas où
+// la version serveur doit remplacer la version locale.
+export const CODE_VERROU = 'P0001'
 
 // Curseur de pagination du pull : clé composite (updated_at, id), strictement croissante.
 // Un simple updated_at ne suffit pas : si plus d'une page de lignes partage le même horodatage,
@@ -29,14 +34,25 @@ export class SyncError extends Error {
   }
 }
 
-// Erreurs métier Postgres = code SQLSTATE (ex. P0001). Pas de code = réseau ; PGRST3xx = session.
-const isFatal = (code: string | undefined) => !code || code.startsWith('PGRST3')
+// Erreur « fatale » = transitoire ou globale (réseau, session, base indisponible) : on arrête le
+// cycle et on réessaiera plus tard, sans isoler les lignes une à une.
+// - pas de code : réseau (fetch échoué) ;
+// - PGRST0xx : PostgREST ne joint pas la base (connexion, cache de schéma, délai de pool) ;
+// - PGRST3xx : session / JWT ;
+// - 08xxx : connexion Postgres perdue ; 57014 : délai d'exécution dépassé (statement timeout).
+// Tout le reste (SQLSTATE métier ou contrainte, PGRST1xx/2xx) est un refus propre à la ligne.
+export function isFatal(code: string | null | undefined): boolean {
+  if (!code) return true
+  return code.startsWith('PGRST0') || code.startsWith('PGRST3') || code.startsWith('08') || code === '57014'
+}
 
 export function supabaseRemote(client: SupabaseClient): RemoteApi {
   return {
     async upsert(table, rows) {
       const { error } = await client.from(table).upsert(rows, { onConflict: 'id' })
-      return error ? { error: error.message, fatal: isFatal(error.code) } : { error: null, fatal: false }
+      return error
+        ? { error: error.message, code: error.code || null, fatal: isFatal(error.code) }
+        : { error: null, code: null, fatal: false }
     },
     async fetchSince(table, cursor, limit) {
       let q = client

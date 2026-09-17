@@ -3,7 +3,7 @@ import { countDirty, onLocalWrite } from '../db/repo'
 import { nowISO } from '../lib/dates'
 import { pullAll } from './pull'
 import { pushDirty } from './push'
-import { SyncError, type RemoteApi } from './remote'
+import { CODE_VERROU, SyncError, type RemoteApi } from './remote'
 
 export interface SyncState {
   status: 'idle' | 'syncing' | 'offline' | 'error'
@@ -52,11 +52,17 @@ export function createSyncEngine(opts: EngineOptions): SyncEngine {
       await pullAll(opts.db, opts.remote)
       await opts.afterPull?.()
       if ((await countDirty(opts.db)) > 0) await pushDirty(opts.db, opts.remote)
-      const n = pushed.rejected.length
+      const verrous = pushed.rejected.filter((r) => r.code === CODE_VERROU).length
+      const enAttente = pushed.rejected.filter((r) => r.code !== CODE_VERROU)
+      const messages = [
+        enAttente.length > 0 ? `${enAttente.length} modification(s) non synchronisée(s) : ${enAttente[0].error}` : '',
+        verrous > 0 ? `${verrous} modification(s) refusée(s) par le serveur (trajet exporté ?)` : '',
+      ].filter(Boolean)
       set({
-        status: 'idle',
+        // Des lignes restent à pousser à cause d'un refus serveur : c'est une erreur visible.
+        status: enAttente.length > 0 ? 'error' : 'idle',
         lastSync: nowISO(),
-        message: n > 0 ? `${n} modification(s) refusée(s) par le serveur (trajet exporté ?)` : null,
+        message: messages.length > 0 ? messages.join(' · ') : null,
       })
     } catch (e) {
       const fatal = e instanceof SyncError && e.fatal
