@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, fileToShare, modeNote, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
@@ -216,7 +216,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                   <Row
                     key={x.id}
                     label={x.motif}
-                    detail={`${formatDateCourte(x.date)} · ${formatKm(x.km_total)}${x.nature === 'domicile_travail' ? ' · domicile–travail' : ''}`}
+                    detail={`${formatDateCourte(x.date)} · ${formatKm(x.km_total)}${x.nature === 'domicile_travail' ? ' · domicile–travail' : ''}${!e && calc.get(x.id)?.montant_negatif ? ' · montant négatif' : ''}`}
                     value={pourMemoire ? 'Pour mémoire' : formatEuro(ligne.total)}
                     onClick={() => onOpenTrip(x.id)}
                     chevron
@@ -224,6 +224,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                 ))}
             </Section>
             {bareme_indisponible && <Banner onClick={() => onGoto('settings')}>{p.blocked}</Banner>}
+            {!e && display?.montant_negatif && <Banner>{NEGATIF_AVERTISSEMENT}</Banner>}
             <div className="-mt-4 mb-8 px-4">
               {e ? (
                 <PrimaryButton tone="plain" onClick={() => display && share(display)}>

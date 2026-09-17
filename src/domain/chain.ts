@@ -21,6 +21,9 @@ export interface TripCalc {
   bareme_annee: number | null
   provisoire: boolean
   bareme_indisponible: boolean // montant non calculable faute de barème exploitable pour ce trajet
+  // Trajet non exporté dont le montant calculé est négatif (barème ou CV revus à la baisse après un
+  // export) : avertissement seulement, l'invariant garde le total annuel juste.
+  montant_negatif: boolean
 }
 
 export function groupKey(vehicleId: string, activite: Activite, annee: number): string {
@@ -71,6 +74,7 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
       bareme_annee: set?.annee ?? null,
       provisoire: set?.provisoire ?? false,
       bareme_indisponible: false,
+      montant_negatif: false,
     })
     if (compte) {
       const key = groupKey(t.vehicle_id!, t.activite, annee)
@@ -111,7 +115,9 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
       for (const t of aTraiter) {
         const montant = montants.get(t.id)!
         const calc = out.get(t.id)!
-        out.set(t.id, { ...calc, montant_bareme: montant, total: round2(montant + calc.frais), bareme_indisponible: false })
+        out.set(t.id, {
+          ...calc, montant_bareme: montant, total: round2(montant + calc.frais), bareme_indisponible: false, montant_negatif: montant < 0,
+        })
       }
     } catch {
       // Barème incomplet pour ce CV (ex. ligne du barème supprimée depuis Réglages) : échec atomique,

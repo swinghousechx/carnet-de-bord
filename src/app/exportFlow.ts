@@ -70,6 +70,11 @@ export function fileToShare(sent: PreparedExport, rebuilt: ExportData | null, re
   return record ? { ...sent.data, genere_le: record.created_at } : sent.data
 }
 
+// Montant négatif dans l'aperçu : on prévient sans bloquer (l'invariant de la chaîne garde le total
+// annuel juste ; c'est le signe qu'un barème ou une puissance fiscale a changé après un export).
+export const NEGATIF_AVERTISSEMENT =
+  'Un montant est négatif : le barème ou la puissance du véhicule a changé après un export. Vérifie avant d’exporter.'
+
 export const SYNC_INCOMPLETE = 'Synchronisation incomplète : vérifie le réseau puis relance l’export.'
 
 // Garde juste avant le RPC (après la synchro) : le serveur fige ce qu'IL a. Si une ligne locale

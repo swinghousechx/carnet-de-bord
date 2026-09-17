@@ -207,6 +207,20 @@ describe('computeAll — invariant de la chaîne : Σ figés + Σ calculés = ro
     expect(groupSum(m, [exporte, reste])).toBe(1530)
   })
 
+  it('montant négatif : drapeau montant_negatif posé sur le trajet non exporté (barème baissé ou CV changé après export)', () => {
+    const exporte = makeTrip({ km_total: 5000, date: '2026-03-01', statut: 'exporte', montant_bareme: 3180, export_id: 'e1' })
+    const reste = makeTrip({ km_total: 100, date: '2026-09-01' })
+    // Export figé à 5 CV, puis la voiture est corrigée à 3 CV : f_3CV(5100) = 5100 × 0,316 + 1065 = 2676,6.
+    const en3cv = computeAll(data([exporte, reste], { vehicles: [{ ...vA, cv: 3 }, vB] }))
+    expect(en3cv.get(reste.id)).toMatchObject({ montant_bareme: -503.4, montant_negatif: true })
+    expect(en3cv.get(exporte.id)?.montant_negatif).toBe(false) // figé : jamais signalé
+    // Barème baissé : même drapeau.
+    const baisse = rates.map((r) => (r.cv_min === 5 && r.cv_max === 5 ? { ...r, coef: 0.3, constante: 0 } : r))
+    expect(computeAll(data([exporte, reste], { rates: baisse })).get(reste.id)?.montant_negatif).toBe(true)
+    // Cas normal : pas de drapeau.
+    expect(computeAll(data([exporte, reste])).get(reste.id)?.montant_negatif).toBe(false)
+  })
+
   it('aucun trajet exporté : comportement inchangé (L = 0 = f(0))', () => {
     const a = makeTrip({ km_total: 3000, date: '2026-09-02' })
     const b = makeTrip({ km_total: 3000, date: '2026-09-05' })

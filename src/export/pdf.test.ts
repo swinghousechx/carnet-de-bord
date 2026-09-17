@@ -14,7 +14,8 @@ const data: ExportData = {
   pourMemoire: [{ ...ligne, trip_id: 'dt', nature: 'domicile_travail', montant_bareme: 0, total: 0 }],
   totaux: { km: 3384, bareme: 2152, frais: 184, total: 2336, nb_trajets: 40 },
   vehicules: [{ nom: 'Golf', immatriculation: 'AB-123-CD', cv: 5, energie: 'thermique', cumulAvant: 1200, cumulApres: 4584 }],
-  bareme_annee: 2026, bareme_provisoire: false, bareme_indisponible: false, mode: 'bareme', genere_le: '2026-10-01T09:00:00.000Z',
+  bareme_annee: 2026, bareme_provisoire: false, bareme_indisponible: false,
+  montant_negatif: false, mode: 'bareme', genere_le: '2026-10-01T09:00:00.000Z',
 }
 
 describe('pdf', () => {

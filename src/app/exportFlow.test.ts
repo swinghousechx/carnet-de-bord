@@ -6,7 +6,7 @@ import { CarnetDB, SYNC_TABLES } from '../db/db'
 import { saveRow } from '../db/repo'
 import { makeExpense, makeFiscalYear, makePlace } from '../test/fixtures'
 import {
-  defaultRecapMonth, fileToShare, modeNote, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
+  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
 } from './exportFlow'
 
 const { year, rates } = defaultBareme()
@@ -255,5 +255,21 @@ describe('modeNote (carte Récap)', () => {
     const bar = app({ trips: [t] })
     expect(modeNote(prepareExport(bar, computeAll(bar), 'swing_house', '2026-09', 'x').prepared!.data)).toBeNull()
     expect(modeNote(null)).toBeNull()
+  })
+})
+
+describe('montant négatif (avertissement, pas de blocage)', () => {
+  it('export figé à 5 CV puis CV corrigé : aperçu signalé, export non bloqué, total annuel juste', () => {
+    const e = makeExport({ id: 'e5', mois: '2026-03', statut: 'emis' })
+    const exporte = makeTrip({ km_total: 5000, date: '2026-03-01', statut: 'exporte', montant_bareme: 3180, export_id: 'e5' })
+    const reste = makeTrip({ km_total: 100, date: '2026-09-01' })
+    const a = app({ trips: [exporte, reste], exports: [e], vehicles: [makeVehicle({ id: 'veh-A', cv: 3 })] })
+    const p = prepareExport(a, computeAll(a), 'swing_house', '2026-09', 'x')
+    expect(p.blocked).toBeNull()
+    expect(p.prepared?.data.montant_negatif).toBe(true)
+    expect(p.prepared?.payload).toEqual([{ id: reste.id, montant_bareme: -503.4 }])
+    expect(NEGATIF_AVERTISSEMENT).toMatch(/Un montant est négatif/)
+    const normal = app({ trips: [exporte, reste], exports: [e] })
+    expect(prepareExport(normal, computeAll(normal), 'swing_house', '2026-09', 'x').prepared?.data.montant_negatif).toBe(false)
   })
 })

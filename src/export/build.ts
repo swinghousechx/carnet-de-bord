@@ -54,6 +54,7 @@ export interface ExportData {
   bareme_annee: number | null
   bareme_provisoire: boolean
   bareme_indisponible: boolean
+  montant_negatif: boolean // au moins une ligne à montant négatif (avertissement, non bloquant)
   mode: ModeFiscal
   genere_le: string
 }
@@ -166,6 +167,7 @@ export function buildExportData(a: BuildArgs): ExportData {
     bareme_annee: a.record ? a.record.bareme_annee : (calcs.find((c) => c.bareme_annee != null)?.bareme_annee ?? null),
     bareme_provisoire: a.record ? a.record.bareme_provisoire : calcs.some((c) => c.provisoire),
     bareme_indisponible,
+    montant_negatif: lignes.some((l) => a.calc.get(l.trip_id)?.montant_negatif === true),
     mode: settings.mode,
     genere_le: a.genere_le,
   }

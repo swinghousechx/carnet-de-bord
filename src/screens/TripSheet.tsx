@@ -34,7 +34,7 @@ export interface TripSheetProps {
 
 type KmState = 'idle' | 'calcul' | 'attente' | 'erreur'
 
-export default function TripSheet({ data, tripId, prefill, onClose, onNext }: TripSheetProps) {
+export default function TripSheet({ data, calc, tripId, prefill, onClose, onNext }: TripSheetProps) {
   const existing = tripId ? data.trips.find((t) => t.id === tripId) : undefined
   const locked = existing?.statut === 'exporte'
   const [f, setF] = useState<Trip>(() => existing ?? emptyTrip(data, todayISO(), prefill))
@@ -297,6 +297,11 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
         </Section>
       </fieldset>
 
+      {!locked && calc.get(f.id)?.montant_negatif && (
+        <p className="mx-8 -mt-4 mb-6 text-[13px] text-orange">
+          Montant barème négatif : le barème ou la puissance du véhicule a changé après un export. Vérifie avant d’exporter.
+        </p>
+      )}
       {!locked && reasons.length > 0 && <p className="mx-8 -mt-4 mb-6 text-[13px] text-orange">À compléter : {reasons.join(' · ')}</p>}
       {error && <p className="mx-8 mb-6 text-[13px] text-red">{error}</p>}
 
