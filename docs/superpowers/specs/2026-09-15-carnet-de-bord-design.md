@@ -206,7 +206,8 @@ Hors ligne : autocomplete indisponible → seuls favoris et récents sélectionn
 
 ### 9.3 Récap / export
 - Sélecteur de mois.
-- Une carte par activité : nombre de trajets, km, un seul montant en gras (« **Indemnités kilométriques à rembourser** » pour Swing House — remboursement de frais professionnels —, « **Indemnités kilométriques (charge déductible)** » pour LMNP), brouillons restants, rattrapages. Total global, avec la mention « Péages et parkings non inclus : réglés directement par l'entreprise. »
+- Une carte par activité : nombre de trajets, km, un seul montant en gras (« **Indemnités kilométriques à rembourser** » pour Swing House — remboursement de frais professionnels —, « **Indemnités kilométriques (charge déductible)** » pour LMNP), brouillons restants, rattrapages. **Aucun total toutes activités confondues** : la SAS et l'EI LMNP sont deux entités juridiques distinctes, chaque carte porte son propre total. Mention « Péages et parkings non inclus : réglés directement par l'entreprise. » sous les cartes.
+- Bascule « Mois | Année » en haut de l'écran. La vue Mois est décrite ici ; la vue Année est décrite en §12 (récapitulatif annuel).
 - Mention « barème provisoire » si applicable.
 - Bouton « Exporter Swing House — septembre 2026 » (idem LMNP) : pousse la synchro, confirme (« Verrouille N trajets »), appelle `export_month`, génère PDF + CSV, ouvre la feuille de partage iOS avec les deux fichiers. Si des brouillons existent sur ce mois : action principale « Compléter d'abord », secondaire « Exporter quand même » (les brouillons partiront au prochain export en rattrapage).
 - Historique des exports (version, date, statut) avec re-partage (fichiers régénérés à partir des données figées).
@@ -251,8 +252,27 @@ Mise en page sobre, dans le même esprit que l'app : noir sur blanc, Helvetica, 
 ### CSV
 Une ligne par trajet ; colonnes définies dans `src/export/columns.ts` (seul fichier à modifier quand le comptable aura répondu). Séparateur `;`, décimales à virgule, UTF-8 avec BOM (ouverture directe dans Excel FR).
 
+### Récapitulatif annuel (vue « Année » du Récap)
+Document de **synthèse** par activité et par année civile, qui **ne verrouille rien** : ni RPC, ni réseau, ni modification de données. Les notes mensuelles restent les seules pièces qui figent les montants.
+- Écran : sélecteur d'année (année courante par défaut) et une carte par activité (jamais additionnées). Chaque carte affiche :
+  - le nombre de trajets comptés (les trajets pour mémoire sont listés mais pas comptés) et la distance ;
+  - « Indemnités kilométriques » avec sa nature : montant figé pour les trajets exportés, montant calculé pour les trajets validés non exportés ;
+  - « X mois exportés sur Y » (mois ayant des trajets comptés), puis en orange les trajets non encore exportés et les brouillons ;
+  - le bouton « Exporter le récapitulatif annuel — <activité> <année> ».
+- Trajets rattachés à l'année de leur **date** (comme la chaîne du barème). Brouillons exclus des lignes et des totaux.
+- PDF :
+  - titre « Swing House SAS — Récapitulatif annuel des indemnités kilométriques <année> » ou « LMNP Nid de l'Aiguille (EI) — Récapitulatif annuel des frais de déplacement <année> » ;
+  - mention « Document de synthèse : ne remplace pas les notes mensuelles exportées. », et le cas échéant « Provisoire : N trajet(s) non encore exporté(s), M brouillon(s) exclus. » ;
+  - bénéficiaire, véhicule(s), barème(s) appliqué(s) ou mention frais réels, mention péages et parkings ;
+  - tableau par date, colonnes Date, Motif, Trajet, Km, Indemnité, Statut (« Exporté v2 », avec la note d'origine pour un rattrapage, ou « Non exporté ») ;
+  - sous-totaux par mois, total annuel, sous-totaux par véhicule s'il y en a plusieurs ;
+  - section pour mémoire et signature identiques à la note mensuelle.
+- CSV : colonnes de la note mensuelle (sans « Rattrapage ») précédées de « Mois » et suivies de « Statut ».
+- Fichiers `carnet-<activité>-<année>-recap-annuel.pdf/.csv`.
+- **Invariant** (testé) : indemnité annuelle = Σ des notes mensuelles émises de l'année (versions en vigueur) + montants calculés des trajets validés non exportés. Quand tout est exporté, elle vaut aussi Σ round2(f(D)) sur les groupes de l'année. Exception assumée : un rattrapage d'une autre année compte dans l'année de sa date, pas dans celle de la note qui l'a figé.
+
 ### Partage
-Web Share API avec fichiers (PDF + CSV en une fois) ; repli : téléchargement.
+Web Share API avec fichiers (PDF + CSV en une fois) ; repli : téléchargement. Deux gestes : préparation des fichiers, puis « Partager » (iOS exige un geste récent).
 
 ## 13. Prérequis de mise en service (actions de Sam, guidées)
 
