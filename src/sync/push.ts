@@ -1,12 +1,13 @@
 import { MISE_A_L_ECART, SYNC_TABLES, type CarnetDB, type Local } from '../db/db'
-import { CODE_VERROU, SyncError, type RemoteApi, type ServerRow } from './remote'
+import { nowISO } from '../lib/dates'
+import { CODE_DOUBLON, CODE_VERROU, SyncError, type RemoteApi, type ServerRow } from './remote'
 
 export interface Rejection {
   table: string
   id: string
   error: string
   code: string | null // P0001 = verrou métier (version serveur rétablie) ; sinon la ligne reste à pousser
-  quarantaine?: true // P0001 sur une ligne inconnue du serveur : mise à l'écart (voir db.ts)
+  quarantaine?: true // P0001 sur une ligne inconnue du serveur : mise à l’écart (voir db.ts)
 }
 
 export interface PushResult {
@@ -74,6 +75,38 @@ async function quarantineIfUnchanged(db: CarnetDB, table: string, row: AnyLocal)
   })
 }
 
+// Choix fiscal créé sur cet appareil avant d'avoir reçu celui du serveur pour la même (année,
+// activité) : l'index unique refuse la ligne locale (23505) et elle resterait à pousser pour
+// toujours. On adopte la ligne serveur : le choix local y est reporté (si l'année n'est pas
+// verrouillée), puis le doublon local est retiré (deleted_at, jamais renvoyé : le serveur ne l'a
+// jamais eu). Année verrouillée : la version serveur fait foi et le refus est signalé.
+// Renvoie null si rien n'a pu être adopté (la ligne reste alors à pousser).
+async function adoptServerFiscalYear(
+  db: CarnetDB,
+  remote: RemoteApi,
+  row: AnyLocal,
+): Promise<{ pushed: true } | { rejection: Rejection } | null> {
+  const local = row as unknown as { annee: number; activite: string; mode: string; inclure_domicile_travail: boolean }
+  const server = await remote.fetchActiveBy('fiscal_years', { annee: local.annee, activite: local.activite })
+  if (!server || server.id === row.id) return null
+  const merged = { ...server, mode: local.mode, inclure_domicile_travail: local.inclure_domicile_travail }
+  const res = await remote.upsert('fiscal_years', [toServer(merged)])
+  if (res.fatal) throw new SyncError(res.error!, true)
+  if (res.error && res.code !== CODE_VERROU) {
+    return { rejection: { table: 'fiscal_years', id: row.id, error: res.error, code: res.code } }
+  }
+  const adopted = res.error ? server : merged
+  const tbl = db.table<AnyLocal, string>('fiscal_years')
+  await db.transaction('rw', tbl, async () => {
+    const cur = await tbl.get(row.id)
+    if (!cur || cur._rev !== row._rev) return // réécrite entre-temps : on réessaiera au prochain cycle
+    const existing = await tbl.get(server.id)
+    if (existing?._dirty !== 1) await tbl.put({ ...adopted, _dirty: 0, _rev: existing?._rev ?? 0 } as AnyLocal)
+    await tbl.put({ ...cur, deleted_at: nowISO(), _dirty: 0 } as AnyLocal)
+  })
+  return res.error ? { rejection: { table: 'fiscal_years', id: row.id, error: res.error, code: res.code } } : { pushed: true }
+}
+
 export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushResult> {
   const result: PushResult = { pushed: 0, rejected: [] }
   for (const table of SYNC_TABLES) {
@@ -98,6 +131,17 @@ export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushRe
         continue
       }
       if (one.fatal) throw new SyncError(one.error, true)
+      if (table === 'fiscal_years' && one.code === CODE_DOUBLON) {
+        const adopted = await adoptServerFiscalYear(db, remote, row)
+        if (adopted && 'pushed' in adopted) {
+          result.pushed++
+          continue
+        }
+        if (adopted) {
+          result.rejected.push(adopted.rejection)
+          continue
+        }
+      }
       // Seul le verrou métier (ligne exportée) justifie de rétablir la version serveur. Toute autre
       // erreur (contrainte, clé étrangère, droits…) peut venir d'un ordre d'envoi ou d'un état
       // transitoire : écraser la saisie locale ferait perdre une modification (ex. trajets remis

@@ -11,6 +11,8 @@ export interface UpsertResult {
 // Refus métier explicite (verrou d'un trajet exporté, levé par nos triggers et RPC) : seul cas où
 // la version serveur doit remplacer la version locale.
 export const CODE_VERROU = 'P0001'
+// Violation d'unicité (ex. fiscal_years_unique sur (annee, activite)).
+export const CODE_DOUBLON = '23505'
 
 // Curseur de pagination du pull : clé composite (updated_at, id), strictement croissante.
 // Un simple updated_at ne suffit pas : si plus d'une page de lignes partage le même horodatage,
@@ -23,7 +25,11 @@ export interface Cursor {
 export interface RemoteApi {
   upsert(table: string, rows: Record<string, unknown>[]): Promise<UpsertResult>
   fetchSince(table: string, cursor: Cursor | null, limit: number): Promise<{ rows: ServerRow[]; error: string | null }>
+  // null = ligne absente du serveur. Toute erreur de lecture lève une SyncError (jamais null) :
+  // confondre « absente » et « illisible » ferait mettre à l'écart une ligne que le serveur a.
   fetchById(table: string, id: string): Promise<ServerRow | null>
+  // Ligne non supprimée correspondant exactement à `match` (ex. choix fiscal d'une année), mêmes règles.
+  fetchActiveBy(table: string, match: Record<string, string | number>): Promise<ServerRow | null>
 }
 
 export class SyncError extends Error {
@@ -73,7 +79,13 @@ export function supabaseRemote(client: SupabaseClient): RemoteApi {
       return { rows: (data ?? []) as ServerRow[], error: error?.message ?? null }
     },
     async fetchById(table, id) {
-      const { data } = await client.from(table).select('*').eq('id', id).maybeSingle()
+      const { data, error } = await client.from(table).select('*').eq('id', id).maybeSingle()
+      if (error) throw new SyncError(error.message, isFatal(error.code))
+      return (data as ServerRow | null) ?? null
+    },
+    async fetchActiveBy(table, match) {
+      const { data, error } = await client.from(table).select('*').match(match).is('deleted_at', null).maybeSingle()
+      if (error) throw new SyncError(error.message, isFatal(error.code))
       return (data as ServerRow | null) ?? null
     },
   }

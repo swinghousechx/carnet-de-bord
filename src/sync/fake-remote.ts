@@ -1,16 +1,18 @@
-import type { Cursor, RemoteApi, ServerRow } from './remote'
+import { isFatal, SyncError, type Cursor, type RemoteApi, type ServerRow } from './remote'
 
 // Forme d'un uuid Postgres (les 4 groupes hexadécimaux séparés par des tirets) : validation de
 // forme seulement, pas une implémentation complète du typage Postgres — inutile ici.
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 type Failure = { code: string; error: string }
+type FetchFailure = { code: string | null; error: string }
 
 const FIN_INFINIE = '9999-12-31'
 
 // Contraintes réelles reproduites (option `constraints`), vérifiées ligne par ligne dans l'ordre
 // du lot comme le fait un INSERT … ON CONFLICT multi-lignes (contraintes non différées) :
 // - vehicles_sans_chevauchement : deux véhicules non supprimés ne partagent aucun jour ([] inclusif) ;
+// - fiscal_years_unique : une seule ligne non supprimée par (annee, activite) ;
 // - trips.vehicle_id → vehicles.id (clé étrangère, indépendante de deleted_at).
 function violation(name: string, row: ServerRow, state: (t: string) => Map<string, ServerRow>): Failure | null {
   if (name === 'vehicles' && row.deleted_at == null) {
@@ -21,6 +23,13 @@ function violation(name: string, row: ServerRow, state: (t: string) => Map<strin
       const oFin = (other.date_fin as string | null) ?? FIN_INFINIE
       if (debut <= oFin && (other.date_debut as string) <= fin) {
         return { code: '23P01', error: 'conflicting key value violates exclusion constraint "vehicles_sans_chevauchement"' }
+      }
+    }
+  }
+  if (name === 'fiscal_years' && row.deleted_at == null) {
+    for (const other of state('fiscal_years').values()) {
+      if (other.id !== row.id && other.deleted_at == null && other.annee === row.annee && other.activite === row.activite) {
+        return { code: '23505', error: 'duplicate key value violates unique constraint "fiscal_years_unique"' }
       }
     }
   }
@@ -37,6 +46,12 @@ export function fakeRemote(opts: { constraints?: boolean } = {}) {
   const rejectIds = new Set<string>() // refus métier P0001 (trajet exporté)
   const failIds = new Map<string, Failure>() // refus SQL quelconque, code au choix
   let offline = false
+  // Échec simulé des lectures ponctuelles (fetchById / fetchActiveBy), levé comme le vrai client.
+  const ctl: { fetchFailure: FetchFailure | null } = { fetchFailure: null }
+  const failFetch = () => {
+    if (offline) throw new SyncError('Failed to fetch', true)
+    if (ctl.fetchFailure) throw new SyncError(ctl.fetchFailure.error, isFatal(ctl.fetchFailure.code))
+  }
   let clock = 0
   const tick = () => new Date(Date.UTC(2026, 8, 15, 10, 0, 0, clock++)).toISOString()
   const table = (name: string) => {
@@ -87,11 +102,24 @@ export function fakeRemote(opts: { constraints?: boolean } = {}) {
       return { rows, error: null }
     },
     async fetchById(name, id) {
+      failFetch()
       return table(name).get(id) ?? null
+    },
+    async fetchActiveBy(name, match) {
+      failFetch()
+      return (
+        [...table(name).values()].find((r) => r.deleted_at == null && Object.entries(match).every(([k, v]) => r[k] === v)) ?? null
+      )
     },
   }
   return {
     api,
+    get fetchFailure() {
+      return ctl.fetchFailure
+    },
+    set fetchFailure(v: FetchFailure | null) {
+      ctl.fetchFailure = v
+    },
     rejectIds,
     failIds,
     setOffline: (v: boolean) => {

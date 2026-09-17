@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CarnetDB } from '../db/db'
 import { countDirty, countQuarantined, saveRow, setMeta } from '../db/repo'
 import { syncIncompleteReason } from '../app/exportFlow'
-import { makeExpense, makeTrip, makeVehicle } from '../test/fixtures'
+import { makeExpense, makeFiscalYear, makeTrip, makeVehicle } from '../test/fixtures'
 import { createSyncEngine } from './engine'
 import { fakeRemote } from './fake-remote'
 import { pullAll, UUID_NUL } from './pull'
@@ -187,6 +187,80 @@ describe('pushDirty — verrou sur une ligne jamais reçue par le serveur', () =
     await engine.syncNow()
     expect(engine.getState().message).toMatch(/mise\(s\) à l’écart/)
     expect(await syncIncompleteReason(db, engine.getState())).toBeNull()
+  })
+})
+
+describe('pushDirty — échec de la relecture après un verrou (I4)', () => {
+  it('P0001 puis relecture en erreur : pas de mise à l’écart, ligne toujours à pousser, cycle en erreur', async () => {
+    const r = fakeRemote()
+    const t = makeTrip({ statut: 'exporte' })
+    r.put('trips', t) // le serveur a bien le trajet, verrouillé
+    r.rejectIds.add(t.id)
+    r.fetchFailure = { code: 'XX000', error: 'internal error' }
+    await saveRow(db, 'trips', { ...t, statut: 'valide', motif: 'Modification locale en attente' })
+    await expect(pushDirty(db, r.api)).rejects.toBeInstanceOf(SyncError)
+    expect(await db.trips.get(t.id)).toMatchObject({ _dirty: 1, motif: 'Modification locale en attente' })
+    expect(await countQuarantined(db)).toBe(0)
+
+    const engine = createSyncEngine({ db, remote: r.api, isOnline: () => true })
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'error', pending: 1, quarantined: 0 })
+    // Relecture rétablie : la version serveur verrouillée remplace la locale.
+    r.fetchFailure = null
+    await engine.syncNow()
+    expect(await db.trips.get(t.id)).toMatchObject({ statut: 'exporte', _dirty: 0 })
+  })
+
+  it('relecture en échec réseau : SyncError fatale (hors ligne)', async () => {
+    const r = fakeRemote()
+    const t = makeTrip()
+    r.rejectIds.add(t.id)
+    r.fetchFailure = { code: null, error: 'Failed to fetch' }
+    await saveRow(db, 'trips', t)
+    await expect(pushDirty(db, r.api)).rejects.toMatchObject({ fatal: true })
+    expect(await db.trips.get(t.id)).toMatchObject({ _dirty: 1 })
+  })
+})
+
+describe('pushDirty — choix fiscal en double (23505)', () => {
+  it('ligne serveur non verrouillée : le choix local est reporté sur la ligne serveur, le doublon local est retiré', async () => {
+    const r = fakeRemote({ constraints: true })
+    const serveur = makeFiscalYear({ id: 'fy-serveur', annee: 2026, activite: 'swing_house', mode: 'bareme', inclure_domicile_travail: false })
+    r.put('fiscal_years', serveur)
+    // Réglage basculé sur cet appareil avant le premier pull : nouvelle ligne, autre id.
+    const local = makeFiscalYear({ id: 'fy-local', annee: 2026, activite: 'swing_house', inclure_domicile_travail: true })
+    await saveRow(db, 'fiscal_years', local)
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toEqual([])
+    expect(r.get('fiscal_years', 'fy-serveur')).toMatchObject({ inclure_domicile_travail: true })
+    expect(r.get('fiscal_years', 'fy-local')).toBeUndefined()
+    expect(await db.fiscal_years.get('fy-serveur')).toMatchObject({ inclure_domicile_travail: true, _dirty: 0 })
+    expect(await db.fiscal_years.get('fy-local')).toMatchObject({ _dirty: 0 })
+    expect((await db.fiscal_years.get('fy-local'))?.deleted_at).not.toBeNull()
+    expect(await countDirty(db)).toBe(0)
+  })
+
+  it('ligne serveur verrouillée (année exportée) : la version serveur est adoptée, refus signalé, rien ne reste en attente', async () => {
+    const r = fakeRemote({ constraints: true })
+    const serveur = makeFiscalYear({ id: 'fy-serveur', mode: 'bareme' })
+    r.put('fiscal_years', serveur)
+    r.rejectIds.add('fy-serveur')
+    await saveRow(db, 'fiscal_years', makeFiscalYear({ id: 'fy-local', mode: 'frais_reels' }))
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toEqual([expect.objectContaining({ table: 'fiscal_years', id: 'fy-local', code: 'P0001' })])
+    expect(await db.fiscal_years.get('fy-serveur')).toMatchObject({ mode: 'bareme', _dirty: 0 })
+    expect((await db.fiscal_years.get('fy-local'))?.deleted_at).not.toBeNull()
+    expect(await countDirty(db)).toBe(0)
+  })
+
+  it('loadAppData ne voit plus qu’une ligne pour (année, activité)', async () => {
+    const r = fakeRemote({ constraints: true })
+    r.put('fiscal_years', makeFiscalYear({ id: 'fy-serveur' }))
+    await saveRow(db, 'fiscal_years', makeFiscalYear({ id: 'fy-local', inclure_domicile_travail: true }))
+    await pushDirty(db, r.api)
+    const { loadAppData } = await import('../hooks/useData')
+    const app = await loadAppData(db)
+    expect(app.fiscalYears.map((f) => f.id)).toEqual(['fy-serveur'])
   })
 })
 
