@@ -90,7 +90,7 @@ export async function runExport(client: SupabaseClient, p: PreparedExport): Prom
 export function rebuildExport(app: AppData, calc: Map<string, TripCalc>, rec: ExportRecord): ExportData {
   return buildExportData({
     activite: rec.activite, mois: rec.mois, version: rec.version, selection: tripsOfExport(app.trips, rec.id),
-    data: app, calc, genere_le: rec.created_at,
+    data: app, calc, genere_le: rec.created_at, record: rec,
   })
 }
 

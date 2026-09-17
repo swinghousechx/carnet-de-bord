@@ -1,7 +1,9 @@
 import { BENEFICIAIRE } from '../config'
 import { cumulKm, type CalcData, type TripCalc } from '../domain/chain'
 import { fiscalSettings, isExcludedDomicileTravail } from '../domain/rules'
-import { EXPENSE_LABEL, type Activite, type Energie, type ExportTotaux, type ModeFiscal, type Nature, type Trip } from '../domain/types'
+import {
+  EXPENSE_LABEL, type Activite, type Energie, type ExportCumul, type ExportRecord, type ExportTotaux, type ModeFiscal, type Nature, type Trip,
+} from '../domain/types'
 import { firstDayOfMonth, lastDayOfMonth, monthOf, yearOf } from '../lib/dates'
 import { formatEuro, formatMoisLong, round1, round2 } from '../lib/format'
 
@@ -64,6 +66,8 @@ export interface BuildArgs {
   data: CalcData
   calc: Map<string, TripCalc>
   genere_le: string
+  // Re-partage d'un export émis : l'en-tête reprend ce qui a été figé dans l'enregistrement.
+  record?: ExportRecord
 }
 
 export function buildExportData(a: BuildArgs): ExportData {
@@ -108,27 +112,37 @@ export function buildExportData(a: BuildArgs): ExportData {
 
   const bareme = round2(lignes.reduce((s, l) => s + l.montant_bareme, 0))
   const frais = round2(lignes.reduce((s, l) => s + l.frais, 0))
+
+  const vehicleIds = [...new Set(a.selection.filter((t) => !pourMemoire.some((p) => p.trip_id === t.id)).map((t) => t.vehicle_id))]
+  const figes = a.record?.totaux.cumuls
+  // Export ancien sans cumuls enregistrés : on reconstitue au mieux en ignorant les trajets créés
+  // après l'export (ils ne pouvaient pas figurer dans le cumul d'origine).
+  const cumulData = a.record && !figes
+    ? { ...a.data, trips: a.data.trips.filter((t) => t.created_at <= a.record!.created_at) }
+    : a.data
+  const cumuls: ExportCumul[] = []
+  const vehicules: VehiculeExport[] = vehicleIds.flatMap((id) => {
+    const v = id ? vehicles.get(id) : undefined
+    if (!v) return []
+    const fige = figes?.find((c) => c.vehicle_id === v.id)
+    const cumul: ExportCumul = fige ?? {
+      vehicle_id: v.id,
+      avant: cumulKm(cumulData, v.id, a.activite, annee, firstDayOfMonth(a.mois), false),
+      apres: cumulKm(cumulData, v.id, a.activite, annee, lastDayOfMonth(a.mois), true),
+    }
+    cumuls.push(cumul)
+    return [{ nom: v.nom, immatriculation: v.immatriculation, cv: v.cv, energie: v.energie, cumulAvant: cumul.avant, cumulApres: cumul.apres }]
+  })
+
   const totaux: ExportTotaux = {
     km: round1(lignes.reduce((s, l) => s + l.km, 0)),
     bareme,
     frais,
     total: round2(bareme + frais),
     nb_trajets: lignes.length,
+    // Transmis tel quel au serveur (p_totaux) : c'est ce qui rend un re-partage stable.
+    cumuls: figes ?? cumuls,
   }
-
-  const vehicleIds = [...new Set(a.selection.filter((t) => !pourMemoire.some((p) => p.trip_id === t.id)).map((t) => t.vehicle_id))]
-  const vehicules: VehiculeExport[] = vehicleIds.flatMap((id) => {
-    const v = id ? vehicles.get(id) : undefined
-    if (!v) return []
-    return [{
-      nom: v.nom,
-      immatriculation: v.immatriculation,
-      cv: v.cv,
-      energie: v.energie,
-      cumulAvant: cumulKm(a.data, v.id, a.activite, annee, firstDayOfMonth(a.mois), false),
-      cumulApres: cumulKm(a.data, v.id, a.activite, annee, lastDayOfMonth(a.mois), true),
-    }]
-  })
 
   const calcs = lignes.map((l) => a.calc.get(l.trip_id)).filter((c): c is TripCalc => c != null && c.compte)
 

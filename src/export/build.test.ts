@@ -28,7 +28,10 @@ describe('buildExportData', () => {
   })
   it('détaille les frais et calcule les totaux', () => {
     expect(d.lignes[1].frais_detail).toBe('Péage 4,60 € (A40)')
-    expect(d.totaux).toEqual({ km: 150, bareme: 95.4, frais: 4.6, total: 100, nb_trajets: 2 })
+    expect(d.totaux).toEqual({
+      km: 150, bareme: 95.4, frais: 4.6, total: 100, nb_trajets: 2,
+      cumuls: [{ vehicle_id: 'veh-A', avant: 300, apres: 350 }],
+    })
   })
   it('en-tête : titre, véhicule et cumul annuel avant/après le mois', () => {
     expect(d.titre).toBe('Swing House SAS — Note de frais kilométriques')

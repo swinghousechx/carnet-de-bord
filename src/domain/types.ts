@@ -108,12 +108,21 @@ export interface TripExpense extends BaseRow {
   note: string
 }
 
+// Cumul annuel des km d'un véhicule (groupe de la chaîne) figé au moment de l'export, pour que
+// l'en-tête d'un re-partage reste identique au fichier d'origine.
+export interface ExportCumul {
+  vehicle_id: string
+  avant: number
+  apres: number
+}
+
 export interface ExportTotaux {
   km: number
   bareme: number
   frais: number
   total: number
   nb_trajets: number
+  cumuls?: ExportCumul[] // absent sur les exports antérieurs à ce champ
 }
 
 export interface ExportRecord extends BaseRow {

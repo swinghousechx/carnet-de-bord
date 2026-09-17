@@ -145,6 +145,32 @@ describe('rebuildExport', () => {
     expect(d.totaux.total).toBe(63.6)
     expect(d.genere_le).toBe('2026-10-01T08:00:00.000Z')
   })
+
+  it('re-partage stable : le cumul avant/après figé à l’export ne bouge pas quand un trajet du mois arrive après', () => {
+    const avant = makeTrip({ date: '2026-08-10', km_total: 200 })
+    const t = makeTrip({ date: '2026-09-10', km_total: 100 })
+    const a = app({ trips: [avant, t] })
+    const sent = prepareExport(a, computeAll(a), 'swing_house', '2026-09', 'x').prepared!
+    expect(sent.data.totaux.cumuls).toEqual([{ vehicle_id: 'veh-A', avant: 200, apres: 300 }])
+    // Enregistrement serveur : totaux tels qu'envoyés (p_totaux), trajets figés.
+    const e = makeExport({ id: 'e2', totaux: sent.data.totaux, created_at: '2026-10-01T08:00:00.000Z' })
+    const lock = (x: typeof t) => ({ ...x, statut: 'exporte' as const, export_id: 'e2', montant_bareme: sent.payload.find((l) => l.id === x.id)!.montant_bareme })
+    // Plus tard : un trajet oublié daté du 20 septembre (partira en rattrapage le mois suivant).
+    const oublie = makeTrip({ date: '2026-09-20', km_total: 50, created_at: '2026-10-05T08:00:00.000Z' })
+    const later = app({ trips: [lock(avant), lock(t), oublie], exports: [e] })
+    const d = rebuildExport(later, computeAll(later), e)
+    expect(d.vehicules.map((v) => [v.cumulAvant, v.cumulApres])).toEqual([[200, 300]])
+    expect(d.totaux).toEqual(sent.data.totaux)
+  })
+
+  it('re-partage d’un export ancien (sans cumuls enregistrés) : ignore les trajets créés après l’export', () => {
+    const e = makeExport({ id: 'e3', created_at: '2026-10-01T08:00:00.000Z' })
+    const t = makeTrip({ date: '2026-09-10', km_total: 100, statut: 'exporte', export_id: 'e3', montant_bareme: 63.6 })
+    const oublie = makeTrip({ date: '2026-09-20', km_total: 50, created_at: '2026-10-05T08:00:00.000Z' })
+    const a = app({ trips: [t, oublie], exports: [e] })
+    const d = rebuildExport(a, computeAll(a), e)
+    expect(d.vehicules.map((v) => [v.cumulAvant, v.cumulApres])).toEqual([[0, 100]])
+  })
 })
 
 describe('defaultRecapMonth', () => {

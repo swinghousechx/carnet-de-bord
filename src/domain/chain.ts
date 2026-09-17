@@ -27,11 +27,25 @@ export function groupKey(vehicleId: string, activite: Activite, annee: number): 
   return `${vehicleId}|${activite}|${annee}`
 }
 
-const byDate = (a: Trip, b: Trip) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at)
+// Ordre de la chaîne : date, puis created_at, puis id (déterministe même à horodatage identique).
+export const byChainOrder = (a: Trip, b: Trip) =>
+  a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)
 
-// Montant de chaque trajet. Chaîne par (véhicule, activité, année) :
-// montant = round2(f(C + km)) − round2(f(C)), les trajets exportés (figés) formant la base C.
-// La somme d'un groupe vaut donc toujours round2(f(total km)).
+// Le trajet entre-t-il dans la chaîne de son groupe ? Règle unique, partagée par computeAll et
+// cumulKm pour que l'en-tête des exports (cumul avant/après) et les montants s'accordent toujours.
+// Les brouillons comptent (vision « projetée », spec §6.2).
+export function countsInChain(t: Trip, fiscalYears: FiscalYear[], liveVehicleIds: Set<string>): boolean {
+  const settings = fiscalSettings(yearOf(t.date), t.activite, fiscalYears)
+  return tripCounts(t, settings) && t.km_total != null && t.vehicle_id != null && liveVehicleIds.has(t.vehicle_id)
+}
+
+// Montant de chaque trajet. Chaîne par (véhicule, activité, année).
+// Invariant : Σ montants figés (trajets exportés) + Σ montants calculés = round2(f(D)), D = km comptés
+// du groupe. Les trajets exportés forment la base : C = leurs km, L = la somme de leurs montants figés.
+// Ces montants figés ne valent pas forcément round2(f(C)) (ils ont pu être calculés avec d'autres
+// trajets avant eux dans la chaîne : brouillon plus ancien, trajet rouvert, barème modifié depuis…),
+// donc le premier trajet à calculer reçoit round2(f(C + km)) − L, et les suivants l'incrément usuel
+// round2(f(C + km)) − round2(f(C)). Sans trajet exporté, L = 0 = f(0) : chaîne télescopique classique.
 export function computeAll(data: CalcData): Map<string, TripCalc> {
   const out = new Map<string, TripCalc>()
   const vehicles = new Map(data.vehicles.filter((v) => !v.deleted_at).map((v) => [v.id, v]))
@@ -41,18 +55,18 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
   }
 
   const groups = new Map<string, Trip[]>()
+  const liveVehicleIds = new Set(vehicles.keys())
   for (const t of data.trips) {
     if (t.deleted_at) continue
     const annee = yearOf(t.date)
     const set = selectRateSet(annee, data.baremeYears, data.rates)
-    const settings = fiscalSettings(annee, t.activite, data.fiscalYears)
-    const compte = tripCounts(t, settings) && t.km_total != null && t.vehicle_id != null && vehicles.has(t.vehicle_id)
-    const f = round2(frais.get(t.id) ?? 0)
+    const compte = countsInChain(t, data.fiscalYears, liveVehicleIds)
+    const fraisTrip = round2(frais.get(t.id) ?? 0)
     const montant = t.statut === 'exporte' ? t.montant_bareme : 0
     out.set(t.id, {
       montant_bareme: montant,
-      frais: f,
-      total: round2(montant + f),
+      frais: fraisTrip,
+      total: round2(montant + fraisTrip),
       compte,
       bareme_annee: set?.annee ?? null,
       provisoire: set?.provisoire ?? false,
@@ -78,12 +92,19 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
       continue
     }
     try {
-      const f = (D: number) => round2(baremeAmount(D, vehicle.cv, vehicle.energie, set))
-      let C = members.filter((t) => t.statut === 'exporte').reduce((s, t) => s + t.km_total!, 0)
+      const bareme = (D: number) => round2(baremeAmount(D, vehicle.cv, vehicle.energie, set))
+      const figes = members.filter((t) => t.statut === 'exporte')
+      let C = figes.reduce((s, t) => s + t.km_total!, 0)
+      // Base déjà versée : ce que valent réellement les trajets figés (et non bareme(C)).
+      let base = round2(figes.reduce((s, t) => s + t.montant_bareme, 0))
       const montants = new Map<string, number>()
-      for (const t of aTraiter.sort(byDate)) {
-        const montant = round2(f(C + t.km_total!) - f(C))
+      for (const t of aTraiter.sort(byChainOrder)) {
+        const cumul = bareme(C + t.km_total!)
+        // Pas de plancher à 0 : un montant négatif reste possible (barème ou CV revus à la baisse
+        // après un export) et doit être conservé, sinon le groupe dépasserait round2(f(D)).
+        const montant = round2(cumul - base)
         C += t.km_total!
+        base = cumul
         montants.set(t.id, montant)
       }
       // Groupe calculé en entier avec succès : on applique tous les montants d'un coup.
@@ -104,7 +125,8 @@ export function computeAll(data: CalcData): Map<string, TripCalc> {
   return out
 }
 
-// Km comptés d'un groupe jusqu'à une date (pour l'en-tête des exports).
+// Km comptés d'un groupe jusqu'à une date (pour l'en-tête des exports). Même règle d'inclusion que
+// la chaîne (countsInChain) : l'en-tête et les montants portent sur les mêmes trajets.
 export function cumulKm(
   data: CalcData,
   vehicleId: string,
@@ -113,16 +135,15 @@ export function cumulKm(
   untilDate: string,
   inclusive: boolean,
 ): number {
-  const settings = fiscalSettings(annee, activite, data.fiscalYears)
+  const liveVehicleIds = new Set(data.vehicles.filter((v) => !v.deleted_at).map((v) => v.id))
   const km = data.trips
     .filter(
       (t) =>
         t.vehicle_id === vehicleId &&
         t.activite === activite &&
         yearOf(t.date) === annee &&
-        t.km_total != null &&
         (inclusive ? t.date <= untilDate : t.date < untilDate) &&
-        tripCounts(t, settings),
+        countsInChain(t, data.fiscalYears, liveVehicleIds),
     )
     .reduce((s, t) => s + t.km_total!, 0)
   return round1(km)
