@@ -19,7 +19,13 @@ export function ActionSheet(props: {
   if (!props.open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-black/40 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)]" onClick={props.onCancel}>
-      <div className="w-full space-y-2" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={props.title ?? props.message ?? 'Confirmation'}
+        className="w-full space-y-2"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="ios-list overflow-hidden rounded-[14px] bg-cell text-center">
           {(props.title || props.message || props.children) && (
             <div className="space-y-1 px-4 py-3">

@@ -57,6 +57,7 @@ export default function App() {
       {tab === 'settings' && (
         <Settings
           data={data}
+          calc={calc}
           onOpenVehicle={(id) => setSheet({ kind: 'vehicle', vehicleId: id })}
           onOpenBareme={(annee) => setSheet({ kind: 'bareme', annee })}
         />
