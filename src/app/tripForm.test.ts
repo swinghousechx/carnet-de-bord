@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { AppData } from '../hooks/useData'
 import { makePlace, makeTrip, makeVehicle } from '../test/fixtures'
-import { emptyTrip, finalizeTrip, nextStepPrefill, recentMotifs } from './tripForm'
+import { makeExpense } from '../test/fixtures'
+import { draftFooter, emptyTrip, expenseChanges, finalizeTrip, nextStepPrefill, recentMotifs } from './tripForm'
 
 const dom = makePlace({ id: 'p-dom', role: 'domicile', adresse: '74310 Servoz' })
 const sh = makePlace({ id: 'p-sh', role: 'swing_house', adresse: 'Chamonix' })
@@ -35,5 +36,35 @@ describe('tripForm', () => {
       makeTrip({ motif: 'Réunion comptable annuelle', created_at: '2026-09-12T00:00:00.000Z' }),
     ]
     expect(recentMotifs(trips, 'x')).toEqual(['Réunion comptable annuelle', 'Livraison matériel TrackMan'])
+  })
+})
+
+describe('expenseChanges', () => {
+  const existant = makeExpense({ id: 'e-old', trip_id: 't1', montant: 12 })
+  const nouveau = makeExpense({ id: 'e-new', trip_id: 't1', montant: 0 })
+
+  it('montant d’une dépense existante effacé → suppression (logique), pas de conservation de l’ancien montant', () => {
+    const r = expenseChanges([existant], { 'e-old': '' }, [], new Set(['e-old']), 't1')
+    expect(r).toEqual({ save: [], remove: ['e-old'] })
+    expect(expenseChanges([existant], { 'e-old': '0' }, [], new Set(['e-old']), 't1')).toEqual({ save: [], remove: ['e-old'] })
+  })
+  it('montant valide → enregistré (virgule acceptée) ; nouvelle ligne vide → ignorée', () => {
+    const r = expenseChanges([existant, nouveau], { 'e-old': '7,50', 'e-new': '' }, [], new Set(['e-old']), 't1')
+    expect(r.remove).toEqual([])
+    expect(r.save).toEqual([{ ...existant, montant: 7.5 }])
+  })
+  it('lignes retirées : supprimées une seule fois', () => {
+    const r = expenseChanges([], {}, ['e-old', 'e-old'], new Set(['e-old']), 't1')
+    expect(r).toEqual({ save: [], remove: ['e-old'] })
+  })
+})
+
+describe('draftFooter', () => {
+  it('pas de double point quand un motif se termine déjà par un point', () => {
+    expect(draftFooter(['Motif trop court (12 caractères minimum) : qui, quoi, où.'])).toBe(
+      'Brouillon : Motif trop court (12 caractères minimum) : qui, quoi, où.',
+    )
+    expect(draftFooter(['Départ manquant', 'Km non calculés'])).toBe('Brouillon : Départ manquant · Km non calculés.')
+    expect(draftFooter([])).toBe('Brouillon : à finir plus tard.')
   })
 })

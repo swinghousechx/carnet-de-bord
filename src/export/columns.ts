@@ -29,6 +29,13 @@ export const CSV_COLUMNS: CsvColumn[] = [
   { header: 'Frais annexes (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.frais, 2) },
   { header: 'Détail frais', value: (l) => l.frais_detail },
   { header: 'Total (€)', value: (l, _d, pm) => decimalFr(pm ? 0 : l.total, 2) },
-  { header: 'Nature', value: (_l, _d, pm) => (pm ? 'Domicile–travail (non remboursé)' : 'Déplacement professionnel') },
+  // Mode frais réels (spec §6.4) : barème à 0 € voulu, précisé ici pour ne pas passer pour un oubli.
+  {
+    header: 'Nature',
+    value: (_l, d, pm) =>
+      pm ? 'Domicile–travail (non remboursé)'
+      : d.mode === 'frais_reels' ? 'Déplacement professionnel (frais réels : barème non appliqué)'
+      : 'Déplacement professionnel',
+  },
   { header: 'Rattrapage', value: (l) => l.rattrapage ?? '' },
 ]

@@ -11,7 +11,7 @@ describe('tripsForExport', () => {
   const deja = makeTrip({ date: '2026-09-02', statut: 'exporte', export_id: 'e-old' })
   const all = [sept, aout, oct, brouillon, lmnp, deja]
 
-  it("validés non exportés de l'activité, datés jusqu'à la fin du mois, triés par date", () => {
+  it('validés non exportés de l’activité, datés jusqu’à la fin du mois, triés par date', () => {
     expect(tripsForExport(all, [], 'swing_house', '2026-09').map((t) => t.id)).toEqual([aout.id, sept.id])
   })
   it('rectificatif : reprend les trajets encore verrouillés de la version à rectifier', () => {

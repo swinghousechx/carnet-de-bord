@@ -47,7 +47,7 @@ export function renderPdf(d: ExportData): Blob {
         ` - cumul ${d.mois.slice(0, 4)} : ${formatKm(v.cumulAvant)} avant ce mois, ${formatKm(v.cumulApres)} en fin de mois`,
     ),
     d.mode === 'bareme'
-      ? `Barème kilométrique ${d.bareme_annee ?? '-'}${d.bareme_provisoire ? " (provisoire : barème de l'année pas encore publié)" : ''}`
+      ? `Barème kilométrique ${d.bareme_annee ?? '-'}${d.bareme_provisoire ? ' (provisoire : barème de l’année pas encore publié)' : ''}`
       : 'Mode frais réels : coût du véhicule traité hors de cet état ; seuls les frais annexes figurent ici.',
   ]
   doc.setFont('helvetica', 'normal')

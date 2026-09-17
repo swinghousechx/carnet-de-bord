@@ -42,6 +42,13 @@ describe('csv', () => {
     // Colonnes : ...Véhicule;Barème (€);Frais annexes (€);Détail frais;Total (€);Nature;...
     expect(rows[2]).toContain(';0,00;0,00;Péage 4,60 € (A40);0,00;Domicile–travail (non remboursé);')
   })
+  it('mode frais réels : la colonne Nature précise que le barème n’est pas appliqué (montant 0 voulu)', () => {
+    const reel = { ...data, mode: 'frais_reels', lignes: [ligne({ montant_bareme: 0, total: 4.6 })] } as unknown as ExportData
+    const rows = toCsv(reel).slice(1).trimEnd().split('\r\n')
+    expect(rows[0].split(';')).toHaveLength(15) // format inchangé
+    expect(rows[1]).toContain(';0,00;4,60;Péage 4,60 € (A40);4,60;Déplacement professionnel (frais réels : barème non appliqué);')
+    expect(rows[2]).toContain(';Domicile–travail (non remboursé);')
+  })
   it('nom de fichier stable', () => {
     expect(exportFileName({ activite: 'swing_house', mois: '2026-09', version: 2 }, 'pdf')).toBe('carnet-swing-house-2026-09-v2.pdf')
     expect(exportFileName({ activite: 'lmnp', mois: '2026-09', version: 1 }, 'csv')).toBe('carnet-lmnp-2026-09-v1.csv')

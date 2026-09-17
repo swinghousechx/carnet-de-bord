@@ -9,7 +9,7 @@ import { formatEuro, formatMoisLong, round1, round2 } from '../lib/format'
 
 export const TITRES_EXPORT: Record<Activite, string> = {
   swing_house: 'Swing House SAS — Note de frais kilométriques',
-  lmnp: "LMNP Nid de l'Aiguille (EI) — Frais de déplacement",
+  lmnp: 'LMNP Nid de l’Aiguille (EI) — Frais de déplacement',
 }
 
 export interface LigneExport {
@@ -162,8 +162,9 @@ export function buildExportData(a: BuildArgs): ExportData {
     pourMemoire,
     totaux,
     vehicules,
-    bareme_annee: calcs.find((c) => c.bareme_annee != null)?.bareme_annee ?? null,
-    bareme_provisoire: calcs.some((c) => c.provisoire),
+    // Re-partage : ce qui a été figé à l'export fait foi (le barème a pu être saisi ou modifié depuis).
+    bareme_annee: a.record ? a.record.bareme_annee : (calcs.find((c) => c.bareme_annee != null)?.bareme_annee ?? null),
+    bareme_provisoire: a.record ? a.record.bareme_provisoire : calcs.some((c) => c.provisoire),
     bareme_indisponible,
     mode: settings.mode,
     genere_le: a.genere_le,

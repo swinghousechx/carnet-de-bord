@@ -1,7 +1,8 @@
 import { newRow } from '../db/repo'
 import { computeStatut, isDomicileTravailCandidate, kmTotal, resolveVehicle, roleOf } from '../domain/rules'
-import { ROLE_LABEL, type Trip } from '../domain/types'
+import { ROLE_LABEL, type Trip, type TripExpense } from '../domain/types'
 import type { AppData } from '../hooks/useData'
+import { parseDecimal } from '../lib/parse'
 
 export function emptyTrip(data: AppData, today: string, prefill: Partial<Trip> = {}): Trip {
   const dom = data.places.find((p) => p.role === 'domicile')
@@ -59,4 +60,31 @@ export function finalizeTrip(f: Trip, data: AppData): Trip {
     nature: candidat ? f.nature : 'pro',
   }
   return { ...next, statut: computeStatut(next, { vehicles: data.vehicles, places: data.places }) }
+}
+
+// Frais annexes à l'enregistrement du formulaire. Une dépense déjà enregistrée dont le montant a été
+// effacé (ou mis à 0) est supprimée (suppression logique), comme un « Retirer » : on ne garde jamais
+// silencieusement l'ancien montant. Une nouvelle ligne laissée vide est simplement ignorée.
+export function expenseChanges(
+  expenses: TripExpense[],
+  amounts: Record<string, string>,
+  removed: string[],
+  existingIds: Set<string>,
+  tripId: string,
+): { save: TripExpense[]; remove: string[] } {
+  const save: TripExpense[] = []
+  const remove = new Set(removed)
+  for (const e of expenses) {
+    const montant = parseDecimal(amounts[e.id] ?? '')
+    if (montant != null && montant > 0) save.push({ ...e, trip_id: tripId, montant })
+    else if (existingIds.has(e.id)) remove.add(e.id)
+  }
+  return { save, remove: [...remove] }
+}
+
+// Pied de l'écran « Trajet enregistré » pour un brouillon : un seul point final, même si le dernier
+// motif en porte déjà un.
+export function draftFooter(reasons: string[]): string {
+  const texte = reasons.join(' · ') || 'à finir plus tard'
+  return `Brouillon : ${texte.replace(/\.+$/, '')}.`
 }

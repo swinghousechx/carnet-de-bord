@@ -22,7 +22,7 @@ describe('buildExportData', () => {
     expect(d.pourMemoire.map((l) => l.trip_id)).toEqual([dt.id])
     expect(d.pourMemoire[0].montant_bareme).toBe(0)
   })
-  it("marque les rattrapages avec leur mois d'origine", () => {
+  it('marque les rattrapages avec leur mois d’origine', () => {
     expect(d.lignes[0].rattrapage).toBe('août 2026')
     expect(d.lignes[1].rattrapage).toBeNull()
   })

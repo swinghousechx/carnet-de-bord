@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+  defaultRecapMonth, fileToShare, modeNote, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
@@ -184,13 +184,16 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                 </span>
               }
               footer={
-                e
-                  ? `Exporté le ${formatDateCourte(e.created_at.slice(0, 10))} (v${e.version}), trajets verrouillés.`
-                  : [
-                      display?.version && display.version > 1 ? `Rectificatif : version ${display.version}.` : '',
-                      rattrapages ? `${rattrapages} rattrapage(s) de mois antérieurs inclus.` : '',
-                      display?.bareme_provisoire ? 'Barème provisoire.' : '',
-                    ].filter(Boolean).join(' ') || undefined
+                [
+                  ...(e
+                    ? [`Exporté le ${formatDateCourte(e.created_at.slice(0, 10))} (v${e.version}), trajets verrouillés.`]
+                    : [
+                        display?.version && display.version > 1 ? `Rectificatif : version ${display.version}.` : '',
+                        rattrapages ? `${rattrapages} rattrapage(s) de mois antérieurs inclus.` : '',
+                        display?.bareme_provisoire ? 'Barème provisoire.' : '',
+                      ]),
+                  modeNote(display) ?? '',
+                ].filter(Boolean).join(' ') || undefined
               }
             >
               <Row label="Trajets" value={totaux.nb_trajets} />

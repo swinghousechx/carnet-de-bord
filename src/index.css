@@ -106,3 +106,11 @@ select {
   border-top: 0.5px solid var(--sep);
   pointer-events: none;
 }
+
+/* Rangées de puces défilantes : défilement conservé, barre de défilement masquée. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -6,7 +6,7 @@ const { year, rates } = buildBaremeRows(2026, 0.2, 'test', DEFAULT_RATES)
 const set = selectRateSet(2026, [year], rates)!
 
 describe('selectRateSet', () => {
-  it(`prend l'année demandée`, () => {
+  it('prend l’année demandée', () => {
     expect(set.annee).toBe(2026)
     expect(set.provisoire).toBe(false)
     expect(set.rates).toHaveLength(15)

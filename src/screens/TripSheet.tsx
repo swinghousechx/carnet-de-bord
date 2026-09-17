@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { placeKey, shouldComputeRoute } from '../app/routeKm'
-import { emptyTrip, finalizeTrip, nextStepPrefill, recentMotifs } from '../app/tripForm'
+import { draftFooter, emptyTrip, expenseChanges, finalizeTrip, nextStepPrefill, recentMotifs } from '../app/tripForm'
 import { db } from '../db/db'
 import { newRow, saveRow, saveRows, softDelete } from '../db/repo'
 import type { TripCalc } from '../domain/chain'
@@ -130,12 +130,9 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
     }
     const trip = finalizeTrip({ ...draft, brouillon_force: force, doublon_confirme: f.doublon_confirme || doublonOk }, data)
     await saveRow(db, 'trips', trip)
-    const valid = expenses.flatMap((e) => {
-      const montant = parseDecimal(amounts[e.id] ?? '')
-      return montant != null && montant > 0 ? [{ ...e, trip_id: trip.id, montant }] : []
-    })
-    if (valid.length) await saveRows(db, 'trip_expenses', valid)
-    for (const id of removed) await softDelete(db, 'trip_expenses', id)
+    const changes = expenseChanges(expenses, amounts, removed, new Set(data.expenses.map((x) => x.id)), trip.id)
+    if (changes.save.length) await saveRows(db, 'trip_expenses', changes.save)
+    for (const id of changes.remove) await softDelete(db, 'trip_expenses', id)
     const used = data.places.filter((p) => p.id === trip.depart_place_id || p.id === trip.arrivee_place_id)
     if (used.length) await saveRows(db, 'places', used.map((p) => ({ ...p, last_used_at: nowISO() })))
     if (existing) onClose()
@@ -175,8 +172,8 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
   if (saved) {
     const r = missingReasons(saved, { vehicles: data.vehicles, places: data.places })
     return (
-      <Sheet open title="Trajet enregistré" onCancel={onClose}>
-        <Section footer={saved.statut === 'brouillon' ? `Brouillon : ${r.join(' · ') || 'à finir plus tard'}.` : 'Trajet validé.'}>
+      <Sheet open title="Trajet enregistré" onCancel={onClose} cancelLabel={null}>
+        <Section footer={saved.statut === 'brouillon' ? draftFooter(r) : 'Trajet validé.'}>
           <Row label={saved.motif || 'Sans motif'} detail={`${saved.depart_label} → ${saved.arrivee_label}`} value={formatKm(saved.km_total)} />
         </Section>
         <div className="space-y-3 px-4">
@@ -216,7 +213,7 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
           <Row label="Arrivée" value={f.arrivee_label || 'Choisir'} detail={f.arrivee_adresse || undefined} onClick={locked ? undefined : () => setPicker('arrivee')} chevron={!locked} />
         </Section>
         {!locked && !f.arrivee_place_id && quickPlaces.length > 0 && (
-          <div className="-mt-5 mb-6 flex gap-2 overflow-x-auto px-4 pb-1">
+          <div className="no-scrollbar -mt-5 mb-6 flex gap-2 overflow-x-auto px-4 pb-1">
             {quickPlaces.map((p) => (
               <Chip key={p.id} label={p.role ? ROLE_LABEL[p.role] : p.label} onClick={() => pickPlace(p, 'arrivee')} />
             ))}
@@ -251,7 +248,7 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
           <TextAreaRow value={f.motif} onChange={(motif) => { set({ motif }); setMotifTouche(true) }} placeholder="Qui, quoi, où (ex. Rendez-vous fournisseur TrackMan à Annecy)" />
         </Section>
         {!locked && suggestions.length > 0 && (
-          <div className="-mt-5 mb-6 flex gap-2 overflow-x-auto px-4 pb-1">
+          <div className="no-scrollbar -mt-5 mb-6 flex gap-2 overflow-x-auto px-4 pb-1">
             {suggestions.map((m) => (
               <Chip key={m} label={m} onClick={() => { set({ motif: m }); setMotifTouche(true) }} />
             ))}

@@ -6,7 +6,7 @@ import { CarnetDB, SYNC_TABLES } from '../db/db'
 import { saveRow } from '../db/repo'
 import { makeExpense, makeFiscalYear, makePlace } from '../test/fixtures'
 import {
-  defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
+  defaultRecapMonth, fileToShare, modeNote, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
 } from './exportFlow'
 
 const { year, rates } = defaultBareme()
@@ -168,6 +168,18 @@ describe('rebuildExport', () => {
     expect(d.totaux).toEqual(sent.data.totaux)
   })
 
+  it('re-partage : année et caractère provisoire du barème repris de l’enregistrement, pas du calcul du jour', () => {
+    // Export émis en 2027 avec le barème 2026 provisoire ; le barème 2027 a été saisi depuis.
+    const e = makeExport({ id: 'e4', mois: '2027-01', bareme_annee: 2026, bareme_provisoire: true, created_at: '2027-02-01T08:00:00.000Z' })
+    const t = makeTrip({ date: '2027-01-10', km_total: 100, statut: 'exporte', export_id: 'e4', montant_bareme: 63.6 })
+    const y2027 = { ...year, id: 'by-2027', annee: 2027 }
+    const r2027 = rates.map((r) => ({ ...r, id: `${r.id}-2027`, annee: 2027 }))
+    const a = app({ trips: [t], exports: [e], baremeYears: [year, y2027], rates: [...rates, ...r2027] })
+    const d = rebuildExport(a, computeAll(a), e)
+    expect(d.bareme_annee).toBe(2026)
+    expect(d.bareme_provisoire).toBe(true)
+  })
+
   it('re-partage d’un export ancien (sans cumuls enregistrés) : ignore les trajets créés après l’export', () => {
     const e = makeExport({ id: 'e3', created_at: '2026-10-01T08:00:00.000Z' })
     const t = makeTrip({ date: '2026-09-10', km_total: 100, statut: 'exporte', export_id: 'e3', montant_bareme: 63.6 })
@@ -231,5 +243,17 @@ describe('syncIncompleteReason (garde avant le verrouillage)', () => {
 
   it('message affiché', () => {
     expect(SYNC_INCOMPLETE).toBe('Synchronisation incomplète : vérifie le réseau puis relance l’export.')
+  })
+})
+
+describe('modeNote (carte Récap)', () => {
+  it('signale le mode frais réels, rien en mode barème', () => {
+    const t = makeTrip({ date: '2026-09-10', km_total: 100 })
+    const reel = app({ trips: [t], fiscalYears: [makeFiscalYear({ mode: 'frais_reels' })] })
+    const d = prepareExport(reel, computeAll(reel), 'swing_house', '2026-09', 'x').prepared!.data
+    expect(modeNote(d)).toBe('Frais réels : barème non appliqué.')
+    const bar = app({ trips: [t] })
+    expect(modeNote(prepareExport(bar, computeAll(bar), 'swing_house', '2026-09', 'x').prepared!.data)).toBeNull()
+    expect(modeNote(null)).toBeNull()
   })
 })
