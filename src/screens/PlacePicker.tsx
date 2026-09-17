@@ -54,6 +54,10 @@ export default function PlacePicker(props: {
     return () => clearTimeout(id)
   }, [query, canSearch, queue])
 
+  // Démontage (fermeture de la feuille) : annule toute requête en attente et empêche une réponse
+  // Google encore en vol (facturée, non annulable) de déclencher un setState après coup.
+  useEffect(() => () => queue.reset(), [queue])
+
   const favoris = ROLE_ORDER.flatMap((r) => props.places.filter((p) => p.role === r))
   const recents = props.places
     .filter((p) => !p.role)
