@@ -13,13 +13,15 @@ import type { AppData } from '../hooks/useData'
 import { loadAppData } from '../hooks/useData'
 import { useSyncState } from '../hooks/useSyncState'
 import { nextMonth, nowISO, prevMonth, todayISO } from '../lib/dates'
-import { formatDateCourte, formatEuro, formatKm, formatMoisLong, round2 } from '../lib/format'
+import { formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
 import { ActivityDot } from '../ui/ActivityDot'
 import { Banner } from '../ui/Banner'
 import { PrimaryButton } from '../ui/Button'
 import { IconChevron } from '../ui/icons'
-import { Row, Section } from '../ui/List'
+import { FootNote, Row, Section } from '../ui/List'
+import { Segmented } from '../ui/Segmented'
+import RecapAnnuel from './RecapAnnuel'
 import { LargeTitle, NavButton } from '../ui/NavBar'
 import type { Tab } from '../ui/TabBar'
 
@@ -48,6 +50,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const sync = useSyncState()
+  const [vue, setVue] = useState<'mois' | 'annee'>('mois')
 
   // Horodatage d'aperçu (imprimé dans l'ExportData mais pas affiché à l'écran) : mémorisé par
   // (data, mois) uniquement pour que `cards` ci-dessous ne se reconstruise pas à chaque rendu sans
@@ -73,8 +76,6 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       }),
     ) as Record<Activite, { preview: ExportPreview; emis: ExportRecord | undefined; display: ExportData | null }>
   }, [data, calc, mois, genereLe])
-
-  const global = round2(ACTIVITES.reduce((s, a) => s + (cards[a].display?.totaux.total ?? ZERO_TOTAUX.total), 0))
 
   function share(d: ExportData) {
     setReady({ files: makeExportFiles(d), title: `${ACTIVITE_LABEL[d.activite]} — ${formatMoisLong(d.mois)} (v${d.version})` })
@@ -142,6 +143,18 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
     setBusy(false)
   }
 
+  // Bascule Mois / Année, affichée sous le grand titre des deux vues.
+  const vueSwitch = (
+    <div className="mx-4 mb-6">
+      <Segmented<'mois' | 'annee'>
+        value={vue}
+        onChange={setVue}
+        options={[{ value: 'mois', label: 'Mois' }, { value: 'annee', label: 'Année' }]}
+      />
+    </div>
+  )
+  if (vue === 'annee') return <RecapAnnuel data={data} calc={calc} vueSwitch={vueSwitch} />
+
   const historique = [...data.exports].sort((a, b) => b.mois.localeCompare(a.mois) || b.version - a.version)
 
   return (
@@ -160,6 +173,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
           </>
         }
       />
+      {vueSwitch}
 
       {sync.quarantined > 0 && (
         // Non bloquant : ces lignes sont ignorées des calculs, l'export porte sur les données du serveur.
@@ -260,16 +274,8 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
         )
       })}
 
-      <Section
-        footer={
-          <>
-            {error && <span className="block text-red">{error}</span>}
-            {FRAIS_NON_INCLUS}
-          </>
-        }
-      >
-        <Row label={<span className="font-semibold">Total global</span>} value={<span className="font-semibold text-label">{formatEuro(global)}</span>} />
-      </Section>
+      {error && <p className="mx-8 -mt-4 mb-4 text-[13px] text-red">{error}</p>}
+      <FootNote>{FRAIS_NON_INCLUS}</FootNote>
 
       {historique.length > 0 && (
         <Section header="Exports">

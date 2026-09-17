@@ -11,6 +11,11 @@ export function Section({ header, footer, children }: { header?: ReactNode; foot
   )
 }
 
+// Note discrète sous le dernier bloc d'un écran (même style qu'un pied de section).
+export function FootNote({ children }: { children: ReactNode }) {
+  return <p className="mx-8 -mt-4 mb-8 text-[13px] text-label2">{children}</p>
+}
+
 export interface RowProps {
   label: ReactNode
   value?: ReactNode

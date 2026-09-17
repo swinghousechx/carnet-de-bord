@@ -122,7 +122,7 @@ export function rebuildExport(app: AppData, calc: Map<string, TripCalc>, rec: Ex
 }
 
 // Mention du mode fiscal sur la carte Récap : en frais réels, le barème à 0 € est voulu (spec §6.4).
-export function modeNote(d: ExportData | null): string | null {
+export function modeNote(d: Pick<ExportData, 'mode'> | null): string | null {
   return d?.mode === 'frais_reels' ? 'Frais réels : barème non appliqué.' : null
 }
 
