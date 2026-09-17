@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decimalFr, formatDateCourte, formatEuro, formatJour, formatKm, formatMoisLong, round1, round2 } from './format'
+import { decimalFr, formatDateCourte, formatEuro, formatJour, formatKm, formatKmNombre, formatMoisLong, round1, round2 } from './format'
 
 describe('arrondis', () => {
   it('round2 arrondit au centime sans erreur flottante', () => {
@@ -21,6 +21,10 @@ describe('format', () => {
   })
   it('formatEuro remplace les espaces insécables par des espaces simples', () => {
     expect(formatEuro(1234.5)).toBe('1 234,50 €')
+  })
+  it('formatKmNombre : comme formatKm, sans unité (tableaux PDF)', () => {
+    expect(formatKmNombre(1218.6)).toBe('1 218,6')
+    expect(formatKmNombre(2500)).toBe('2 500')
   })
   it('formatKm', () => {
     expect(formatKm(1234.5)).toBe('1 234,5 km')

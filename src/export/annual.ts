@@ -10,11 +10,11 @@ import { byChainOrder, type CalcData, type TripCalc } from '../domain/chain'
 import { fiscalSettings } from '../domain/rules'
 import { ACTIVITE_LABEL, type Activite, type Energie, type ExportRecord, type ModeFiscal } from '../domain/types'
 import { monthOf, yearOf } from '../lib/dates'
-import { decimalFr, formatEuro, formatMoisLong, round1, round2 } from '../lib/format'
+import { formatEuro, formatKmNombre, formatMoisLong, round1, round2 } from '../lib/format'
 import { FRAIS_NON_INCLUS, isPourMemoire, toLigneExport, type LigneExport } from './build'
 import { CSV_COLUMNS, type CsvColumn } from './columns'
 import {
-  baremeTexte, FRAIS_REELS_PDF, renderDocument, trajetCells, vehiculeTexte, type PdfCell, type PdfTable,
+  baremeTexte, FRAIS_REELS_PDF, renderDocument, signatureTexte, trajetCells, vehiculeTexte, type PdfCell, type PdfTable,
 } from './pdf'
 
 export const TITRES_ANNUELS: Record<Activite, (annee: number) => string> = {
@@ -27,7 +27,7 @@ export const DOC_SYNTHESE = 'Document de synthèse : ne remplace pas les notes m
 export interface LigneAnnuelle extends LigneExport {
   mois: string // mois de la date du trajet (YYYY-MM)
   exporte: boolean
-  statut: string // « Exporté v2 », « Exporté v1 (note de janvier 2027) », « Non exporté »
+  statut: string // « Exporté v2 », « Exporté v1 (à rectifier) », « Exporté v1 (note de janvier 2027) », « Non exporté »
 }
 
 export interface SousTotal {
@@ -84,6 +84,8 @@ export function buildAnnualData(a: AnnualArgs): AnnualData {
   const trips = a.data.trips
     .filter((t) => !t.deleted_at && t.activite === a.activite && yearOf(t.date) === a.annee)
     .sort(byChainOrder)
+  const tripById = new Map(trips.map((t) => [t.id, t]))
+  const vehicleOf = (l: LigneExport) => tripById.get(l.trip_id)!.vehicle_id
   const vehicles = new Map(a.data.vehicles.map((v) => [v.id, v]))
   const exports = new Map(a.data.exports.map((e) => [e.id, e]))
   const ctx = { calc: a.calc, vehicles, fiscalYears: a.data.fiscalYears }
@@ -98,12 +100,17 @@ export function buildAnnualData(a: AnnualArgs): AnnualData {
     }
     const exporte = t.statut === 'exporte'
     const rec = exporte && t.export_id ? exports.get(t.export_id) : undefined
-    const note = rec && rec.mois !== monthOf(t.date) ? ` (note de ${formatMoisLong(rec.mois)})` : ''
+    const precisions = [
+      rec?.statut === 'a_rectifier' ? 'à rectifier' : '',
+      rec && rec.mois !== monthOf(t.date) ? `note de ${formatMoisLong(rec.mois)}` : '',
+    ].filter(Boolean)
     const ligne: LigneAnnuelle = {
       ...toLigneExport(t, ctx, null),
       mois: monthOf(t.date),
       exporte,
-      statut: exporte ? `Exporté${rec ? ` v${rec.version}` : ''}${note}` : 'Non exporté',
+      statut: exporte
+        ? `Exporté${rec ? ` v${rec.version}` : ''}${precisions.length ? ` (${precisions.join(', ')})` : ''}`
+        : 'Non exporté',
     }
     ;(isPourMemoire(t, a.data.fiscalYears) ? pourMemoire : lignes).push(ligne)
   }
@@ -112,11 +119,11 @@ export function buildAnnualData(a: AnnualArgs): AnnualData {
   const parMois = mois.map((m) => ({ mois: m, ...sousTotal(lignes.filter((l) => l.mois === m)) }))
   const moisExportes = mois.filter((m) => lignes.every((l) => l.mois !== m || l.exporte)).length
 
-  const vehicleIds = [...new Set(lignes.map((l) => trips.find((t) => t.id === l.trip_id)!.vehicle_id))]
+  const vehicleIds = [...new Set(lignes.map(vehicleOf))]
   const vehicules: VehiculeAnnuel[] = vehicleIds.flatMap((id) => {
     const v = id ? vehicles.get(id) : undefined
     if (!v) return []
-    const siens = lignes.filter((l) => trips.find((t) => t.id === l.trip_id)!.vehicle_id === v.id)
+    const siens = lignes.filter((l) => vehicleOf(l) === v.id)
     return [{
       vehicle_id: v.id, libelle: siens[0].vehicule, nom: v.nom, immatriculation: v.immatriculation, cv: v.cv, energie: v.energie,
       ...sousTotal(siens),
@@ -128,7 +135,7 @@ export function buildAnnualData(a: AnnualArgs): AnnualData {
   for (const l of lignes) {
     const c = a.calc.get(l.trip_id)
     if (!c?.compte) continue
-    const t = trips.find((x) => x.id === l.trip_id)!
+    const t = tripById.get(l.trip_id)!
     const rec = l.exporte && t.export_id ? exports.get(t.export_id) : undefined
     const b = rec ? { annee: rec.bareme_annee, provisoire: rec.bareme_provisoire } : { annee: c.bareme_annee, provisoire: c.provisoire }
     baremes.set(`${b.annee}|${b.provisoire}`, b)
@@ -180,11 +187,11 @@ export function annualEntete(d: AnnualData): string[] {
 // colonne Date), puis km, indemnité et statut vide dans leurs colonnes.
 const sousTotalRow = (libelle: string, s: SousTotal): PdfCell[] => [
   { content: `${libelle} · ${s.nb} trajet(s)`, bold: true, colSpan: 3 },
-  { content: decimalFr(s.km, 1), bold: true },
+  { content: formatKmNombre(s.km), bold: true },
   { content: formatEuro(s.indemnite), bold: true },
   { content: '', bold: true },
 ]
-const totalCells = (libelle: string, s: SousTotal) => [libelle, `${s.nb} trajet(s)`, '', decimalFr(s.km, 1), formatEuro(s.indemnite), '']
+const totalCells = (libelle: string, s: SousTotal) => [libelle, `${s.nb} trajet(s)`, '', formatKmNombre(s.km), formatEuro(s.indemnite), '']
 
 // Tableau principal (trajets groupés par mois avec sous-totaux, total annuel en pied), puis
 // sous-totaux par véhicule quand l'année en compte plusieurs.
@@ -207,16 +214,21 @@ export function annualPdfTables(d: AnnualData): PdfTable[] {
     {
       titre: 'Par véhicule',
       head: ['Véhicule', 'Trajets', 'Km', 'Indemnité'],
-      body: d.vehicules.map((v) => [v.libelle, String(v.nb), decimalFr(v.km, 1), formatEuro(v.indemnite)]),
+      body: d.vehicules.map((v) => [v.libelle, String(v.nb), formatKmNombre(v.km), formatEuro(v.indemnite)]),
       widths: [110, 20, 20, 30],
       rightFrom: 1,
     },
   ]
 }
 
+export function annualSignature(d: AnnualData): string {
+  return signatureTexte('etabli', d.genere_le)
+}
+
 export function renderAnnualPdf(d: AnnualData): Blob {
   return renderDocument({
     titre: d.titre,
+    signature: 'etabli',
     entete: annualEntete(d),
     tableaux: annualPdfTables(d),
     pourMemoire: d.pourMemoire,

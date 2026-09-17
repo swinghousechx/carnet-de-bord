@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf'
 import { autoTable, type UserOptions } from 'jspdf-autotable'
-import { decimalFr, formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
+import { formatDateCourte, formatEuro, formatKm, formatKmNombre, formatMoisLong } from '../lib/format'
 import type { Energie } from '../domain/types'
 import { FRAIS_NON_INCLUS, type ExportData, type LigneExport } from './build'
 
@@ -47,7 +47,7 @@ export function pdfEntete(d: ExportData): string[] {
 export const PDF_COLONNES = ['Date', 'Motif', 'Trajet', 'Km', 'Indemnité']
 
 export function pdfPiedTableau(d: ExportData): string[] {
-  return ['Total', `${d.totaux.nb_trajets} trajet(s)`, '', decimalFr(d.totaux.km, 1), formatEuro(d.totaux.bareme)]
+  return ['Total', `${d.totaux.nb_trajets} trajet(s)`, '', formatKmNombre(d.totaux.km), formatEuro(d.totaux.bareme)]
 }
 
 // Blocs communs aux notes mensuelles et au récapitulatif annuel.
@@ -75,8 +75,17 @@ export interface PdfTable {
   rightTo?: number
 }
 
+export type Signature = 'certifie' | 'etabli'
+
+// « Certifié exact » engage : réservé à la note mensuelle. La synthèse annuelle est seulement « établie ».
+export function signatureTexte(kind: Signature, genereLe: string): string {
+  const date = formatDateCourte(genereLe.slice(0, 10))
+  return kind === 'certifie' ? `Certifié exact, le ${date}.` : `Établi le ${date}.`
+}
+
 export interface PdfDocument {
   titre: string
+  signature: Signature
   entete: string[]
   tableaux: PdfTable[]
   pourMemoire: LigneExport[]
@@ -85,10 +94,35 @@ export interface PdfDocument {
   piedPage: string // ex. « … - septembre 2026 », suivi de « - page i/n »
 }
 
-const cell = (c: PdfCell) =>
-  typeof c === 'string'
-    ? pdfText(c)
-    : { content: pdfText(c.content), styles: { fontStyle: 'bold' as const }, ...(c.colSpan ? { colSpan: c.colSpan } : {}) }
+type AlignedCell = { content: string; colSpan?: number; styles: { fontStyle?: 'bold'; halign?: 'right' } }
+
+// Cellules prêtes pour jspdf-autotable. L'alignement à droite est posé cellule par cellule (en tenant
+// compte des colSpan) : columnStyles ne s'applique pas au pied, où les totaux restaient à gauche.
+export function autoTableParts(tab: PdfTable): {
+  head: string[][]
+  body: AlignedCell[][]
+  foot?: AlignedCell[][]
+  columnStyles: Record<number, { cellWidth: number }>
+} {
+  const right = (i: number) => tab.rightFrom != null && i >= tab.rightFrom && i <= (tab.rightTo ?? Infinity)
+  const row = (cells: PdfCell[]): AlignedCell[] => {
+    let col = 0
+    return cells.map((c) => {
+      const span = typeof c === 'string' ? 1 : (c.colSpan ?? 1)
+      const align = span === 1 && right(col) ? { halign: 'right' as const } : {}
+      col += span
+      return typeof c === 'string'
+        ? { content: pdfText(c), styles: align }
+        : { content: pdfText(c.content), ...(c.colSpan ? { colSpan: c.colSpan } : {}), styles: { fontStyle: 'bold' as const, ...align } }
+    })
+  }
+  return {
+    head: [tab.head.map(pdfText)],
+    body: tab.body.map(row),
+    ...(tab.foot ? { foot: [row(tab.foot)] } : {}),
+    columnStyles: Object.fromEntries(tab.widths.map((w, i) => [i, { cellWidth: w }])),
+  }
+}
 
 export function renderDocument(p: PdfDocument): Blob {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
@@ -117,18 +151,8 @@ export function renderDocument(p: PdfDocument): Blob {
       doc.text(t(tab.titre), M, y)
       y += 2
     }
-    const columnStyles = Object.fromEntries(
-      tab.widths.map((w, i) => [i, { cellWidth: w, ...(tab.rightFrom != null && i >= tab.rightFrom && i <= (tab.rightTo ?? Infinity) ? { halign: 'right' as const } : {}) }]),
-    )
-    autoTable(doc, {
-      ...BASE,
-      startY: y,
-      showFoot: 'lastPage',
-      head: [tab.head.map(t)],
-      body: tab.body.map((row) => row.map(cell)),
-      ...(tab.foot ? { foot: [tab.foot.map(t)] } : {}),
-      columnStyles,
-    })
+    const parts = autoTableParts(tab)
+    autoTable(doc, { ...BASE, startY: y, showFoot: 'lastPage', ...parts })
     y = finalY() + 6
   }
 
@@ -142,7 +166,7 @@ export function renderDocument(p: PdfDocument): Blob {
       ...BASE,
       startY: y + 2,
       head: [['Date', 'Motif', 'Trajet', 'Km']],
-      body: p.pourMemoire.map((l) => [formatDateCourte(l.date), l.motif, trajet(l), decimalFr(l.km, 1)].map(t)),
+      body: p.pourMemoire.map((l) => [formatDateCourte(l.date), l.motif, trajet(l), formatKmNombre(l.km)].map(t)),
       columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 80 }, 2: { cellWidth: 70 }, 3: { cellWidth: 16, halign: 'right' } },
     })
     y = finalY() + 10
@@ -151,7 +175,7 @@ export function renderDocument(p: PdfDocument): Blob {
   y = room(y, 30)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  doc.text(t(`Certifié exact, le ${formatDateCourte(p.genere_le.slice(0, 10))}.`), M, y)
+  doc.text(t(signatureTexte(p.signature, p.genere_le)), M, y)
   doc.text(t(p.beneficiaire), M, y + 6)
 
   const n = doc.getNumberOfPages()
@@ -169,7 +193,7 @@ export function trajetCells(l: LigneExport, rattrapage: boolean): string[] {
     formatDateCourte(l.date) + (rattrapage && l.rattrapage ? `\nrattrapage ${l.rattrapage}` : ''),
     l.motif + (l.km_saisi != null ? `\nKm corrigés : ${l.justif_km ?? ''}` : ''),
     trajet(l),
-    decimalFr(l.km, 1),
+    formatKmNombre(l.km),
     formatEuro(l.montant_bareme),
   ]
 }
@@ -177,6 +201,7 @@ export function trajetCells(l: LigneExport, rattrapage: boolean): string[] {
 export function renderPdf(d: ExportData): Blob {
   return renderDocument({
     titre: d.titre,
+    signature: 'certifie',
     entete: pdfEntete(d),
     tableaux: [{
       head: PDF_COLONNES,

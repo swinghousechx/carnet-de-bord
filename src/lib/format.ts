@@ -22,6 +22,11 @@ const euroFmt = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'E
 const moisFmt = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' })
 const jourFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' })
 
+// Nombre de km sans unité, même format que formatKm (tableaux PDF).
+export function formatKmNombre(km: number): string {
+  return cleanSpaces(kmFmt.format(km))
+}
+
 export function formatKm(km: number | null): string {
   return km == null ? '—' : `${cleanSpaces(kmFmt.format(km))} km`
 }

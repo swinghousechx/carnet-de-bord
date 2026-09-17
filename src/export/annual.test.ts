@@ -8,7 +8,7 @@ import { yearOf } from '../lib/dates'
 import { round2 } from '../lib/format'
 import { defaultBareme, makeExport, makeFiscalYear, makeTrip, makeVehicle } from '../test/fixtures'
 import {
-  ANNUAL_CSV_COLUMNS, annualEntete, annualPdfTables, buildAnnualData, DOC_SYNTHESE, provisoireMention, renderAnnualPdf,
+  ANNUAL_CSV_COLUMNS, annualEntete, annualPdfTables, annualSignature, buildAnnualData, DOC_SYNTHESE, provisoireMention, renderAnnualPdf,
   TITRES_ANNUELS, type AnnualData,
 } from './annual'
 import { toCsv } from './csv'
@@ -109,6 +109,15 @@ describe('buildAnnualData — invariant de cohérence avec les notes mensuelles'
     expect(provisoireMention(d)).toBeNull()
   })
 
+  it('trajets encore verrouillés dans une note à rectifier : « Exporté v1 (à rectifier) »', () => {
+    let a = app({ trips: [t1, t2, t3] })
+    a = exporter(a, 'swing_house', '2026-03')
+    a = rouvrir(a, 't1')
+    const d = annual(a)
+    expect(d.pourMemoire.map((l) => l.statut)).toEqual(['Exporté v1 (à rectifier)'])
+    expect(d.lignes.map((l) => l.statut)).toEqual(['Non exporté', 'Non exporté'])
+  })
+
   it('activités jamais mélangées', () => {
     const d = annual(scenario(), 'lmnp')
     expect(d.lignes.map((l) => l.trip_id)).toEqual(['l1'])
@@ -161,28 +170,32 @@ describe('récapitulatif annuel — contenu', () => {
     // Libellé sur Date + Motif + Trajet (colSpan 3) : jamais replié dans la colonne Date.
     expect(sousTotaux[0]).toEqual([
       { content: 'Sous-total mars 2026 · 1 trajet(s)', bold: true, colSpan: 3 },
-      { content: '2500,0', bold: true },
+      { content: '2 500', bold: true },
       { content: '1 729,50 €', bold: true },
       { content: '', bold: true },
     ])
     expect(sousTotaux.map((r) => r.map((c) => (typeof c === 'string' ? c : c.content)))).toEqual([
-      ['Sous-total mars 2026 · 1 trajet(s)', '2500,0', '1 729,50 €', ''],
-      ['Sous-total mai 2026 · 1 trajet(s)', '4000,0', '1 986,00 €', ''],
-      ['Sous-total août 2026 · 1 trajet(s)', '1000,0', '697,00 €', ''],
-      ['Sous-total septembre 2026 · 1 trajet(s)', '200,0', '139,40 €', ''],
+      ['Sous-total mars 2026 · 1 trajet(s)', '2 500', '1 729,50 €', ''],
+      ['Sous-total mai 2026 · 1 trajet(s)', '4 000', '1 986,00 €', ''],
+      ['Sous-total août 2026 · 1 trajet(s)', '1 000', '697,00 €', ''],
+      ['Sous-total septembre 2026 · 1 trajet(s)', '200', '139,40 €', ''],
     ])
     // Chaque ligne couvre exactement les 6 colonnes.
     for (const r of principal.body) {
       expect(r.reduce((n, c) => n + (typeof c === 'string' ? 1 : (c.colSpan ?? 1)), 0)).toBe(6)
     }
-    expect(principal.foot).toEqual(['Total 2026', '4 trajet(s)', '', '7700,0', '4 551,90 €', ''])
+    expect(principal.foot).toEqual(['Total 2026', '4 trajet(s)', '', '7 700', '4 551,90 €', ''])
     expect(vehicules.head).toEqual(['Véhicule', 'Trajets', 'Km', 'Indemnité'])
     expect(vehicules.body).toEqual([
-      ['Golf (AB-123-CD, 5 CV)', '2', '6500,0', '3 715,50 €'],
-      ['Model 3 (EF-456-GH, 7 CV)', '2', '1200,0', '836,40 €'],
+      ['Golf (AB-123-CD, 5 CV)', '2', '6 500', '3 715,50 €'],
+      ['Model 3 (EF-456-GH, 7 CV)', '2', '1 200', '836,40 €'],
     ])
     // Un seul véhicule : pas de tableau par véhicule.
     expect(annualPdfTables(annual(app({ trips: [t5] })))).toHaveLength(1)
+  })
+
+  it('signature de la synthèse : « Établi le », sans « Certifié exact »', () => {
+    expect(annualSignature(d)).toBe('Établi le 31/12/2026.')
   })
 
   it('PDF généré', async () => {
