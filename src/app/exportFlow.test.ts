@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { computeAll } from '../domain/chain'
 import type { AppData } from '../hooks/useData'
 import { defaultBareme, makeExport, makeTrip, makeVehicle } from '../test/fixtures'
-import { defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport } from './exportFlow'
+import { CarnetDB, SYNC_TABLES } from '../db/db'
+import { saveRow } from '../db/repo'
+import { makeExpense, makeFiscalYear, makePlace } from '../test/fixtures'
+import {
+  defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
+} from './exportFlow'
 
 const { year, rates } = defaultBareme()
 const app = (o: Partial<AppData> = {}): AppData => ({
@@ -187,5 +192,44 @@ describe('defaultRecapMonth', () => {
       exports: [makeExport({ activite: 'swing_house', mois: '2026-08', statut: 'emis', version: 1 })],
     })
     expect(defaultRecapMonth(a, '2026-09-15')).toBe('2026-09')
+  })
+})
+
+describe('syncIncompleteReason (garde avant le verrouillage)', () => {
+  const { year: by, rates: br } = defaultBareme()
+  const rows = {
+    trips: makeTrip(),
+    trip_expenses: makeExpense(),
+    vehicles: makeVehicle(),
+    places: makePlace(),
+    fiscal_years: makeFiscalYear(),
+    bareme_years: by,
+    bareme_rates: br[0],
+  } as const
+
+  it('couvre exactement les tables synchronisées', () => {
+    expect(Object.keys(rows).sort()).toEqual([...SYNC_TABLES].sort())
+  })
+
+  it('rien en attente et synchro terminée sans erreur → null', async () => {
+    const db = new CarnetDB(`test-${crypto.randomUUID()}`)
+    expect(await syncIncompleteReason(db, { status: 'idle' })).toBeNull()
+  })
+
+  it.each(Object.keys(rows) as (keyof typeof rows)[])('une ligne encore à pousser dans %s → export bloqué', async (table) => {
+    const db = new CarnetDB(`test-${crypto.randomUUID()}`)
+    await saveRow(db, table, rows[table] as never)
+    expect(await syncIncompleteReason(db, { status: 'idle' })).toBe(SYNC_INCOMPLETE)
+    await db.table(table).toCollection().modify({ _dirty: 0 })
+    expect(await syncIncompleteReason(db, { status: 'idle' })).toBeNull()
+  })
+
+  it.each(['error', 'offline', 'syncing'] as const)('état de synchro « %s » → export bloqué même sans ligne en attente', async (status) => {
+    const db = new CarnetDB(`test-${crypto.randomUUID()}`)
+    expect(await syncIncompleteReason(db, { status })).toBe(SYNC_INCOMPLETE)
+  })
+
+  it('message affiché', () => {
+    expect(SYNC_INCOMPLETE).toBe('Synchronisation incomplète : vérifie le réseau puis relance l’export.')
   })
 })

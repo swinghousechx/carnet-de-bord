@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import { defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, type ExportPreview, type PreparedExport } from '../app/exportFlow'
+import {
+  defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+} from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { db } from '../db/db'
@@ -99,6 +101,13 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       // l'avoir revérifié contre les données les plus fraîches juste avant l'appel réseau — et
       // c'est bien cet aperçu revérifié (« fresh »), jamais celui du tap, qui part au serveur.
       await syncEngine?.syncNow()
+      // La synchro avale ses erreurs (voir engine.ts) : on vérifie explicitement que tout est parti.
+      const incomplete = await syncIncompleteReason(db, syncEngine?.getState() ?? null)
+      if (incomplete) {
+        setError(incomplete)
+        setBusy(false)
+        return
+      }
       const freshData = await loadAppData(db)
       const fresh = prepareExport(freshData, computeAll(freshData), activite, confirmedMois, confirmed.data.genere_le)
       if (fresh.blocked || !fresh.prepared || !sameExport(confirmed, fresh.prepared)) {

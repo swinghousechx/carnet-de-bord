@@ -1,10 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CarnetDB } from '../db/db'
+import { countDirty } from '../db/repo'
 import type { TripCalc } from '../domain/chain'
 import { ACTIVITES, type Activite, type ExportRecord, type Trip } from '../domain/types'
 import { buildExportData, rpcTripsPayload, type ExportData } from '../export/build'
 import { draftsForExport, exportBlockReason, nextVersion, tripsForExport, tripsOfExport } from '../export/select'
 import type { AppData } from '../hooks/useData'
 import { monthOf, prevMonth, yearOf } from '../lib/dates'
+import type { SyncState } from '../sync/engine'
 import { monthNeedsExport } from './home'
 
 export interface PreparedExport {
@@ -65,6 +68,17 @@ export function sameExport(a: PreparedExport, b: PreparedExport): boolean {
 export function fileToShare(sent: PreparedExport, rebuilt: ExportData | null, record: ExportRecord | null): ExportData {
   if (rebuilt && sameExport(sent, { data: rebuilt, payload: rpcTripsPayload(rebuilt) })) return rebuilt
   return record ? { ...sent.data, genere_le: record.created_at } : sent.data
+}
+
+export const SYNC_INCOMPLETE = 'Synchronisation incomplète : vérifie le réseau puis relance l’export.'
+
+// Garde juste avant le RPC (après la synchro) : le serveur fige ce qu'IL a. Si une ligne locale
+// n'est pas encore arrivée (trajet, frais, véhicule, lieu, choix fiscal, barème) ou si la synchro
+// a échoué, les montants confirmés pourraient ne pas correspondre aux données serveur : on
+// n'exporte pas. countDirty couvre exactement les tables synchronisées (SYNC_TABLES).
+export async function syncIncompleteReason(database: CarnetDB, state: Pick<SyncState, 'status'> | null): Promise<string | null> {
+  if (state && state.status !== 'idle') return SYNC_INCOMPLETE
+  return (await countDirty(database)) > 0 ? SYNC_INCOMPLETE : null
 }
 
 // Verrouillage côté serveur (transactionnel) : nécessite le réseau.
