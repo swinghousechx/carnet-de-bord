@@ -31,10 +31,9 @@ export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnu
   const [annee, setAnnee] = useState(() => yearOf(todayISO()))
   const [ready, setReady] = useState<{ files: File[]; title: string } | null>(null)
 
-  const cards = useMemo(
-    () => ACTIVITES.map((a) => prepareAnnual(data, calc, a, annee, nowISO())),
-    [data, calc, annee],
-  )
+  // Aperçu des cartes : la date de génération n'y est pas affichée. Le fichier, lui, est reconstruit
+  // au tap avec un horodatage frais (comme la note mensuelle).
+  const cards = useMemo(() => ACTIVITES.map((a) => prepareAnnual(data, calc, a, annee, '')), [data, calc, annee])
 
   return (
     <>
@@ -81,10 +80,12 @@ export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnu
                 detail={TOTAL_NATURE[d.activite]}
                 value={<span className="font-semibold text-label">{formatEuro(d.totaux.indemnite)}</span>}
               />
-              <Row
-                label={statut.mois}
-                detail={statut.alertes.length ? <span className="text-orange">{statut.alertes.join(' · ')}</span> : undefined}
-              />
+              {(statut.mois || statut.alertes.length > 0) && (
+                <Row
+                  label={statut.mois ?? <span className="text-orange">{statut.alertes.join(' · ')}</span>}
+                  detail={statut.mois && statut.alertes.length ? <span className="text-orange">{statut.alertes.join(' · ')}</span> : undefined}
+                />
+              )}
             </Section>
             {d.bareme_indisponible && <Banner>Barème indisponible pour certains trajets non exportés : montants à 0 €.</Banner>}
             {d.montant_negatif && <Banner>{NEGATIF_AVERTISSEMENT}</Banner>}
@@ -94,9 +95,12 @@ export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnu
                 disabled={vide}
                 // Aucun verrouillage, aucun réseau : fichiers générés localement puis feuille de partage
                 // (second tap, iOS n'ouvrant le partage que sur un geste récent).
-                onClick={() => setReady({ files: makeAnnualFiles(d), title: annualShareTitle(d) })}
+                onClick={() => {
+                  const fichier = prepareAnnual(data, calc, d.activite, annee, nowISO())
+                  setReady({ files: makeAnnualFiles(fichier), title: annualShareTitle(fichier) })
+                }}
               >
-                {annualButtonLabel(d.activite, annee)}
+                {annualButtonLabel(annee)}
               </PrimaryButton>
             </div>
           </div>

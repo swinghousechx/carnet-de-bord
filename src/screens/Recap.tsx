@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, fileToShare, modeNote, TOTAL_NATURE, TOTAL_TITRE, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport,
+  syncIncompleteReason, TOTAL_NATURE, TOTAL_TITRE, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
@@ -9,8 +10,7 @@ import { computeAll, type TripCalc } from '../domain/chain'
 import { ACTIVITES, ACTIVITE_LABEL, type Activite, type ExportRecord, type ExportStatut } from '../domain/types'
 import { FRAIS_NON_INCLUS, type ExportData } from '../export/build'
 import { makeExportFiles, shareOrDownload } from '../export/share'
-import type { AppData } from '../hooks/useData'
-import { loadAppData } from '../hooks/useData'
+import { loadAppData, type AppData } from '../hooks/useData'
 import { nextMonth, nowISO, prevMonth, todayISO } from '../lib/dates'
 import { formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
@@ -19,11 +19,11 @@ import { Banner } from '../ui/Banner'
 import { PrimaryButton } from '../ui/Button'
 import { IconChevron } from '../ui/icons'
 import { FootNote, Row, Section } from '../ui/List'
+import { LargeTitle, NavButton } from '../ui/NavBar'
 import { Segmented } from '../ui/Segmented'
+import type { Tab } from '../ui/TabBar'
 import RecapAnnuel from './RecapAnnuel'
 import { RefusBanner } from './RefusBanner'
-import { LargeTitle, NavButton } from '../ui/NavBar'
-import type { Tab } from '../ui/TabBar'
 
 export interface RecapProps {
   data: AppData
@@ -145,7 +145,10 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
   // Bascule Mois / Année, affichée sous le grand titre des deux vues.
   const vueSwitch = (
     <div className="mx-4 mb-6">
+      {/* Figée pendant un export et tant que sa feuille de partage est ouverte : la vue Année ne
+          porte ni l'une ni l'erreur éventuelle de la vue Mois. */}
       <Segmented<'mois' | 'annee'>
+        disabled={busy || ready != null || confirm != null}
         value={vue}
         onChange={setVue}
         options={[{ value: 'mois', label: 'Mois' }, { value: 'annee', label: 'Année' }]}

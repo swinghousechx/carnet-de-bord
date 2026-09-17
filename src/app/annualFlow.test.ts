@@ -32,8 +32,12 @@ describe('vue annuelle du récap', () => {
     expect(annualCardStatus(tout)).toEqual({ mois: '1 mois exporté(s) sur 1', alertes: [] })
   })
 
-  it('bouton', () => {
-    expect(annualButtonLabel('swing_house', 2026)).toBe('Exporter le récapitulatif annuel — Swing House 2026')
-    expect(annualButtonLabel('lmnp', 2026)).toBe('Exporter le récapitulatif annuel — LMNP 2026')
+  it('aucun trajet compté : pas de « 0 mois exporté(s) sur 0 »', () => {
+    const vide = app()
+    expect(annualCardStatus(prepareAnnual(vide, computeAll(vide), 'lmnp', 2026, 'x'))).toEqual({ mois: null, alertes: [] })
+  })
+
+  it('bouton court (tient sur une ligne à 375 px), l’activité est dans l’en-tête de la carte', () => {
+    expect(annualButtonLabel(2026)).toBe('Exporter le récapitulatif 2026')
   })
 })
