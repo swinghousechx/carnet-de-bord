@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createSuggestQueue } from '../app/placePicker'
 import { db } from '../db/db'
 import { newRow, saveRow } from '../db/repo'
@@ -25,6 +25,7 @@ export default function PlacePicker(props: {
 }) {
   const session = useMemo(() => createAutocompleteSession(), [])
   const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const [results, setResults] = useState<Suggestion[]>([])
   const [error, setError] = useState<string | null>(null)
   const online = navigator.onLine
@@ -57,6 +58,12 @@ export default function PlacePicker(props: {
   // Démontage (fermeture de la feuille) : annule toute requête en attente et empêche une réponse
   // Google encore en vol (facturée, non annulable) de déclencher un setState après coup.
   useEffect(() => () => queue.reset(), [queue])
+
+  // Focus dans le même geste que le toucher (sinon iOS n'ouvre pas le clavier), mais sans laisser
+  // iOS faire défiler la page vers un champ encore sous l'écran pendant la montée de la feuille.
+  useLayoutEffect(() => {
+    if (props.open && canSearch) searchRef.current?.focus({ preventScroll: true })
+  }, [props.open, canSearch])
 
   const favoris = ROLE_ORDER.flatMap((r) => props.places.filter((p) => p.role === r))
   const recents = props.places
@@ -97,7 +104,7 @@ export default function PlacePicker(props: {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           disabled={!canSearch}
-          autoFocus={canSearch}
+          ref={searchRef}
         />
       </div>
       {!online && <p className="mx-8 mb-6 text-[13px] text-label2">Hors ligne : seuls les favoris et les lieux récents sont disponibles.</p>}

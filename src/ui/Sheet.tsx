@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { NavButton } from './NavBar'
 
 export interface SheetProps {
@@ -22,6 +23,8 @@ const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.
 
 // Feuille modale iOS : monte du bas, « Annuler » à gauche, action principale à droite.
 // Annuler, le voile et Échap font redescendre la feuille avant de la retirer.
+// Rendue dans <body> : une feuille ouverte depuis une autre (recherche d'adresse depuis un trajet)
+// ne doit pas hériter du défilement ni de la transformation de sa parente, sinon elle apparaît décalée.
 export function Sheet({ open, title, onCancel, cancelLabel = 'Annuler', onConfirm, confirmLabel = 'OK', confirmDisabled, children }: SheetProps) {
   const [shown, setShown] = useState(false)
   const [leaving, setLeaving] = useState(false)
@@ -68,7 +71,7 @@ export function Sheet({ open, title, onCancel, cancelLabel = 'Annuler', onConfir
   }, [open])
 
   if (!open) return null
-  return (
+  return createPortal(
     <div className="surface-elevated fixed inset-0 z-40">
       <div className={`absolute inset-0 bg-black/40 transition-opacity duration-300 ${shown ? 'opacity-100' : 'opacity-0'}`} onClick={requestCancel} />
       <div
@@ -92,6 +95,7 @@ export function Sheet({ open, title, onCancel, cancelLabel = 'Annuler', onConfir
         </header>
         <div className="flex-1 overflow-y-auto overscroll-contain pb-[calc(env(safe-area-inset-bottom)+24px)]">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

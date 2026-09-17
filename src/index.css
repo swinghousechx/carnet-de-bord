@@ -87,6 +87,11 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Champs de saisie : le curseur suffit à montrer le focus. */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
 
 button {
   -webkit-user-select: none;

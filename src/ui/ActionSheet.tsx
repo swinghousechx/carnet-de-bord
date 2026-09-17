@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface SheetAction {
   label: string
@@ -17,7 +18,8 @@ export function ActionSheet(props: {
   children?: ReactNode
 }) {
   if (!props.open) return null
-  return (
+  // Rendue dans <body>, comme les feuilles : jamais décalée par le défilement d'une feuille parente.
+  return createPortal(
     <div className="surface-elevated anim-fade fixed inset-0 z-50 flex items-end bg-black/40 px-2 pb-[calc(env(safe-area-inset-bottom)+8px)]" onClick={props.onCancel}>
       <div
         role="dialog"
@@ -49,6 +51,7 @@ export function ActionSheet(props: {
           Annuler
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
