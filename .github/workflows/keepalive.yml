@@ -1,18 +1,31 @@
 name: Anti-pause Supabase
 
-# Un projet Supabase gratuit se met en pause après 7 jours sans activité.
+# Un projet Supabase gratuit se met en pause après 7 jours sans activité :
+# deux pings par semaine laissent de la marge si GitHub retarde ou saute une exécution.
 on:
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 6 * * 1,4'
   workflow_dispatch:
+
+permissions:
+  actions: write
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
       - name: Ping
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          curl -fsS -X POST "${{ vars.SUPABASE_URL }}/rest/v1/rpc/ping" \
-            -H "apikey: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}" \
-            -H "Authorization: Bearer ${{ vars.SUPABASE_PUBLISHABLE_KEY }}" \
+          curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ping" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
             -H "Content-Type: application/json" -d '{}'
+      # GitHub désactive les workflows planifiés après 60 jours sans activité sur le dépôt :
+      # on réactive celui-ci à chaque passage (voir docs/mise-en-service.md, « Maintenance »).
+      - name: Rester actif
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/keepalive.yml/enable"
