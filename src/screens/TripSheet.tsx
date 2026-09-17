@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
+import { placeKey, shouldComputeRoute } from '../app/routeKm'
 import { emptyTrip, finalizeTrip, nextStepPrefill, recentMotifs } from '../app/tripForm'
 import { db } from '../db/db'
 import { newRow, saveRow, saveRows, softDelete } from '../db/repo'
@@ -58,26 +59,34 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
   const set = (patch: Partial<Trip>) => setF((x) => ({ ...x, ...patch }))
   const placeById = (id: string | null) => data.places.find((p) => p.id === id)
 
-  // Distance automatique dès que départ et arrivée sont connus. Appel facturé et non annulable :
-  // si l'utilisateur change de départ/arrivée pendant que la requête est en vol, la fonction de
-  // nettoyage de l'effet passe `cancelled` à true avant que le nouvel effet (nouvelle paire) ne
-  // démarre — la réponse tardive ne peut donc jamais écraser les km de la paire courante. Une fois
-  // `km_route` connu, l'effet ne relance pas de requête pour la même paire (garde `f.km_route != null`).
-  // `data.places` est dans les dépendances : un lieu tout juste créé (recherche Google) peut ne pas
-  // encore figurer dans `data.places` au moment du choix (écriture Dexie/synchro live query pas
-  // encore répercutée) ; sans cette dépendance l'effet ne se relancerait jamais pour le déclencher.
+  const depart = placeById(f.depart_place_id)
+  const arrivee = placeById(f.arrivee_place_id)
+  const aKey = placeKey(depart)
+  const bKey = placeKey(arrivee)
+
+  // Distance automatique dès que départ et arrivée sont résolus. Dépendances volontairement
+  // réduites à des primitives (`aKey`/`bKey`, pas `data`/`data.places`) : `useData` recombine les 8
+  // tables dans une seule useLiveQuery, donc toute écriture ailleurs dans l'app (accusé de push,
+  // pull périodique, un autre trajet enregistré) reconstruit `data.places` — s'y abonner relancerait
+  // un appel Google facturé à chaque écriture sans rapport. `saved` coupe tout nouvel appel une fois
+  // le trajet enregistré (l'écran affiché ensuite jetterait le résultat). Appel facturé et non
+  // annulable : si l'utilisateur change de départ/arrivée pendant que la requête est en vol, le
+  // nettoyage de l'effet passe `cancelled` à true avant que le nouvel effet ne démarre — la réponse
+  // tardive ne peut donc jamais écraser les km de la paire courante.
   useEffect(() => {
-    if (locked || f.km_route != null) return
-    const a = placeById(f.depart_place_id)
-    const b = placeById(f.arrivee_place_id)
-    if (!a || !b) return
-    if (!navigator.onLine || !mapsConfigured() || a.lat == null || a.lng == null || b.lat == null || b.lng == null) {
+    if (locked || saved || f.km_route != null) return
+    if (!aKey || !bKey) return
+    const ok = shouldComputeRoute({
+      locked, saved: Boolean(saved), kmRoute: f.km_route, aKey, bKey,
+      online: navigator.onLine, mapsReady: mapsConfigured(),
+    })
+    if (!ok) {
       setKmState('attente')
       return
     }
     let cancelled = false
     setKmState('calcul')
-    computeRouteKm({ lat: a.lat, lng: a.lng }, { lat: b.lat, lng: b.lng }).then(
+    computeRouteKm({ lat: depart!.lat!, lng: depart!.lng! }, { lat: arrivee!.lat!, lng: arrivee!.lng! }).then(
       (km) => {
         if (cancelled) return
         set({ km_route: km })
@@ -88,13 +97,17 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [f.depart_place_id, f.arrivee_place_id, f.km_route, data.places, retry, locked])
+  }, [f.depart_place_id, f.arrivee_place_id, aKey, bKey, f.km_route, retry, locked, saved])
 
   function pickPlace(p: Place, cote: 'depart' | 'arrivee') {
     const label = p.role ? ROLE_LABEL[p.role] : p.label
-    if (cote === 'depart') set({ depart_place_id: p.id, depart_label: label, depart_adresse: p.adresse, km_route: null })
-    else set({ arrivee_place_id: p.id, arrivee_label: label, arrivee_adresse: p.adresse, km_route: null })
+    if (cote === 'depart') {
+      const km_route = p.id === f.depart_place_id ? f.km_route : null
+      set({ depart_place_id: p.id, depart_label: label, depart_adresse: p.adresse, km_route })
+    } else {
+      const km_route = p.id === f.arrivee_place_id ? f.km_route : null
+      set({ arrivee_place_id: p.id, arrivee_label: label, arrivee_adresse: p.adresse, km_route })
+    }
     setPicker(null)
   }
 
@@ -137,8 +150,13 @@ export default function TripSheet({ data, tripId, prefill, onClose, onNext }: Tr
   }
 
   async function reopen() {
-    if (!supabase || !existing) return
-    const { error: err } = await supabase.rpc('reopen_trip', { p_trip_id: existing.id, p_motif: reopenMotif })
+    if (!existing) return
+    if (!supabase) {
+      setError('Connexion Supabase indisponible : réouverture impossible.')
+      setAskReopen(false)
+      return
+    }
+    const { error: err } = await supabase.rpc('reopen_trip', { p_trip_id: existing.id, p_motif: reopenMotif.trim() })
     if (err) {
       setError(navigator.onLine ? err.message : 'Réouverture impossible hors ligne.')
       setAskReopen(false)
