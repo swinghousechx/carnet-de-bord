@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { computeAll } from '../domain/chain'
 import type { AppData } from '../hooks/useData'
 import { defaultBareme, makeExport, makeTrip, makeVehicle } from '../test/fixtures'
-import { defaultRecapMonth, prepareExport, rebuildExport, runExport, sameExport } from './exportFlow'
+import { defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport } from './exportFlow'
 
 const { year, rates } = defaultBareme()
 const app = (o: Partial<AppData> = {}): AppData => ({
@@ -78,6 +78,51 @@ describe('sameExport', () => {
   it('une version différente (ex. un export concurrent est passé entre-temps) → false', () => {
     const p2: typeof p1 = { ...p1, data: { ...p1.data, version: p1.data.version + 1 } }
     expect(sameExport(p1, p2)).toBe(false)
+  })
+
+  it('une année de barème différente → false', () => {
+    const p2: typeof p1 = { ...p1, data: { ...p1.data, bareme_annee: (p1.data.bareme_annee ?? 0) + 1 } }
+    expect(sameExport(p1, p2)).toBe(false)
+  })
+
+  it('un barème provisoire différent → false', () => {
+    const p2: typeof p1 = { ...p1, data: { ...p1.data, bareme_provisoire: !p1.data.bareme_provisoire } }
+    expect(sameExport(p1, p2)).toBe(false)
+  })
+})
+
+describe('fileToShare', () => {
+  const t = makeTrip({ date: '2026-09-10', km_total: 100 })
+  const before = app({ trips: [t] })
+  const sent = prepareExport(before, computeAll(before), 'swing_house', '2026-09', 'x').prepared!
+  const record = makeExport({ id: 'e9', activite: 'swing_house', mois: '2026-09', version: 1, created_at: '2026-10-01T09:00:00.000Z' })
+
+  it('les trajets sont déjà marqués exportés (cas normal) → fichier reconstruit depuis le serveur', () => {
+    const after = app({
+      trips: [{ ...t, statut: 'exporte', export_id: record.id, montant_bareme: sent.payload[0].montant_bareme }],
+      exports: [record],
+    })
+    const rebuilt = rebuildExport(after, computeAll(after), record)
+    const result = fileToShare(sent, rebuilt, record)
+    expect(result.lignes).toHaveLength(1)
+    expect(result.totaux).toEqual(sent.data.totaux)
+    expect(result.genere_le).toBe(record.created_at)
+  })
+
+  it('le pull a récupéré l’export mais pas encore les trajets (course avec la synchro) → repli sur l’aperçu envoyé, avec la date serveur', () => {
+    // Trajet encore 'valide' (pas d'export_id) : rebuildExport ne retrouve aucun trajet figé pour
+    // cet export et reconstruit un fichier vide/à 0 €, qui ne doit jamais être retenu.
+    const after = app({ trips: [t], exports: [record] })
+    const rebuilt = rebuildExport(after, computeAll(after), record)
+    expect(rebuilt.lignes).toHaveLength(0) // le fichier vide qu'il ne faut pas partager
+    const result = fileToShare(sent, rebuilt, record)
+    expect(result.lignes).toHaveLength(1) // vient de `sent`, pas de `rebuilt`
+    expect(result.totaux).toEqual(sent.data.totaux)
+    expect(result.genere_le).toBe(record.created_at)
+  })
+
+  it('aucun enregistrement d’export retrouvé localement → l’aperçu envoyé tel quel', () => {
+    expect(fileToShare(sent, null, null)).toBe(sent.data)
   })
 })
 

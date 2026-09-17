@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { defaultRecapMonth, prepareExport, rebuildExport, runExport, sameExport, type ExportPreview, type PreparedExport } from '../app/exportFlow'
+import { defaultRecapMonth, fileToShare, prepareExport, rebuildExport, runExport, sameExport, type ExportPreview, type PreparedExport } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { db } from '../db/db'
@@ -50,8 +50,10 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
   // (data, mois) uniquement pour que `cards` ci-dessous ne se reconstruise pas à chaque rendu sans
   // rapport (busy, confirm, erreur…) — buildExportData recalcule des cumuls par véhicule pour les
   // deux activités, ce n'est pas gratuit. Ce n'est PAS l'horodatage réellement figé à l'export :
-  // celui-ci est régénéré à l'instant du tap (voir le bouton Exporter) puis, une deuxième fois,
-  // juste avant l'appel réseau dans doExport, sur les données les plus fraîches après synchro.
+  // un horodatage frais (nowISO()) n'est généré qu'une fois, au tap du bouton Exporter (aperçu
+  // confirmé) ; `doExport` le RÉUTILISE tel quel (`confirmed.data.genere_le`) pour l'aperçu
+  // revérifié juste avant le RPC — il n'est jamais régénéré une seconde fois. Le fichier partagé
+  // récupère ensuite la date exacte de l'enregistrement serveur (voir fileToShare).
   const genereLe = useMemo(() => nowISO(), [data, mois])
 
   // Un « paquet » par activité : l'aperçu (préparation + éventuel blocage), le dernier export émis
@@ -114,11 +116,16 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
     }
 
     // Le trajet est désormais verrouillé côté serveur : un échec à partir d'ici (reconstruction ou
-    // partage des fichiers) n'est plus un échec d'export, juste un partage à retenter.
+    // partage des fichiers) n'est plus un échec d'export, juste un partage à retenter. Une synchro
+    // de fond peut avoir couru en même temps que le RPC (le pull récupère les trajets avant les
+    // exports) : l'enregistrement peut être là localement sans que ses trajets portent encore
+    // export_id/'exporte' — fileToShare ne retient la reconstruction que si elle correspond
+    // vraiment à ce qui a été verrouillé, et repart sinon de `sent` (voir exportFlow.ts).
     try {
       const after = await loadAppData(db)
-      const record = after.exports.find((ex) => ex.id === result.id)
-      share(record ? rebuildExport(after, computeAll(after), record) : sent.data)
+      const record = after.exports.find((ex) => ex.id === result.id) ?? null
+      const rebuilt = record ? rebuildExport(after, computeAll(after), record) : null
+      share(fileToShare(sent, rebuilt, record))
     } catch {
       setError('Export verrouillé ; fichiers indisponibles, utilise Re-partager.')
     }

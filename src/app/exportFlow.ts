@@ -44,12 +44,27 @@ export function prepareExport(app: AppData, calc: Map<string, TripCalc>, activit
 // ne doivent pas être figés tels quels.
 export function sameExport(a: PreparedExport, b: PreparedExport): boolean {
   if (a.data.version !== b.data.version) return false
+  if (a.data.bareme_annee !== b.data.bareme_annee) return false
+  if (a.data.bareme_provisoire !== b.data.bareme_provisoire) return false
   if (a.payload.length !== b.payload.length) return false
   const montants = new Map(b.payload.map((l) => [l.id, l.montant_bareme]))
   if (a.payload.some((l) => montants.get(l.id) !== l.montant_bareme)) return false
   const t1 = a.data.totaux
   const t2 = b.data.totaux
   return t1.km === t2.km && t1.bareme === t2.bareme && t1.frais === t2.frais && t1.total === t2.total && t1.nb_trajets === t2.nb_trajets
+}
+
+// Fichier à partager juste après un export réussi. Une synchro en tâche de fond peut avoir couru
+// en même temps que le RPC (le pull récupère les trajets avant les exports, et un trajet encore
+// « dirty » localement est ignoré) : l'enregistrement d'export peut donc être arrivé localement
+// avant que ses trajets ne portent export_id / statut 'exporte'. Dans ce cas, `rebuilt` (reconstruit
+// depuis les données locales à cet instant) serait vide, partiel ou à 0 € — on ne le retient que
+// s'il correspond bien à ce qui a été effectivement verrouillé (`sent`) ; sinon on repart de `sent`
+// (déjà correct puisqu'il vient de ce qui a été envoyé au serveur), avec la date de l'enregistrement
+// serveur si on l'a.
+export function fileToShare(sent: PreparedExport, rebuilt: ExportData | null, record: ExportRecord | null): ExportData {
+  if (rebuilt && sameExport(sent, { data: rebuilt, payload: rpcTripsPayload(rebuilt) })) return rebuilt
+  return record ? { ...sent.data, genere_le: record.created_at } : sent.data
 }
 
 // Verrouillage côté serveur (transactionnel) : nécessite le réseau.
