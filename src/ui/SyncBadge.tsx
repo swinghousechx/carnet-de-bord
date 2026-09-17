@@ -7,7 +7,8 @@ export function SyncBadge() {
     : s.status === 'offline' ? 'Hors ligne'
     : s.status === 'error' ? 'Erreur de synchro'
     : s.pending > 0 ? `${s.pending} en attente`
+    : s.quarantined > 0 ? `${s.quarantined} refusée(s)`
     : null
   if (!text) return null
-  return <span className={`text-[13px] ${s.status === 'error' ? 'text-red' : 'text-label2'}`}>{text}</span>
+  return <span className={`text-[13px] ${s.status === 'error' || (s.status === 'idle' && s.pending === 0 && s.quarantined > 0) ? 'text-red' : 'text-label2'}`}>{text}</span>
 }

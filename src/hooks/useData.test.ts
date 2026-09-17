@@ -3,7 +3,7 @@ import { prepareExport } from '../app/exportFlow'
 import { CarnetDB } from '../db/db'
 import { saveRow } from '../db/repo'
 import { computeAll } from '../domain/chain'
-import { defaultBareme, makeTrip, makeVehicle } from '../test/fixtures'
+import { defaultBareme, makeExpense, makeTrip, makeVehicle } from '../test/fixtures'
 import { loadAppData } from './useData'
 
 let db: CarnetDB
@@ -32,5 +32,18 @@ describe('loadAppData', () => {
     const p = prepareExport(app, computeAll(app), 'swing_house', '2026-09', 'x')
     expect(p.prepared?.payload.map((l) => l.id)).toEqual([bon.id])
     expect(p.drafts.map((t) => t.id)).toEqual([remis.id])
+  })
+
+  it('ignore les lignes mises à l’écart (refusées par le serveur) : les calculs suivent les données serveur', async () => {
+    const t = makeTrip()
+    await saveRow(db, 'trips', t)
+    const ok = makeExpense({ trip_id: t.id, montant: 3 })
+    const refusee = makeExpense({ trip_id: t.id, montant: 50 })
+    await saveRow(db, 'trip_expenses', ok)
+    await saveRow(db, 'trip_expenses', refusee)
+    await db.trip_expenses.update(refusee.id, { _dirty: 2 })
+    const app = await loadAppData(db)
+    expect(app.expenses.map((e) => e.id)).toEqual([ok.id])
+    expect(await db.trip_expenses.get(refusee.id)).toBeDefined() // conservée sur l'appareil
   })
 })

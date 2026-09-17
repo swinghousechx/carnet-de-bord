@@ -1,6 +1,6 @@
 import type { BaseRow } from '../domain/types'
 import { nowISO } from '../lib/dates'
-import { SYNC_TABLES, type CarnetDB, type Local, type RowOf, type SyncTableName } from './db'
+import { MISE_A_L_ECART, SYNC_TABLES, type CarnetDB, type Local, type RowOf, type SyncTableName } from './db'
 
 const listeners = new Set<() => void>()
 
@@ -52,6 +52,21 @@ export async function softDelete<K extends SyncTableName>(db: CarnetDB, table: K
 export async function countDirty(db: CarnetDB): Promise<number> {
   const counts = await Promise.all(SYNC_TABLES.map((t) => db.table(t).where('_dirty').equals(1).count()))
   return counts.reduce((a, b) => a + b, 0)
+}
+
+export async function countQuarantined(db: CarnetDB): Promise<number> {
+  const counts = await Promise.all(SYNC_TABLES.map((t) => db.table(t).where('_dirty').equals(MISE_A_L_ECART).count()))
+  return counts.reduce((a, b) => a + b, 0)
+}
+
+// Remet à pousser les lignes mises à l'écart (ex. après réouverture du trajet concerné).
+export async function retryQuarantined(db: CarnetDB): Promise<number> {
+  let n = 0
+  await db.transaction('rw', SYNC_TABLES.map((t) => db.table(t)), async () => {
+    for (const t of SYNC_TABLES) n += await db.table(t).where('_dirty').equals(MISE_A_L_ECART).modify({ _dirty: 1 })
+  })
+  if (n > 0) listeners.forEach((fn) => fn())
+  return n
 }
 
 export async function getMeta(db: CarnetDB, key: string): Promise<string | null> {

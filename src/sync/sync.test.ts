@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CarnetDB } from '../db/db'
-import { countDirty, saveRow, setMeta } from '../db/repo'
-import { makeTrip, makeVehicle } from '../test/fixtures'
+import { countDirty, countQuarantined, saveRow, setMeta } from '../db/repo'
+import { syncIncompleteReason } from '../app/exportFlow'
+import { makeExpense, makeTrip, makeVehicle } from '../test/fixtures'
 import { createSyncEngine } from './engine'
 import { fakeRemote } from './fake-remote'
 import { pullAll, UUID_NUL } from './pull'
@@ -138,6 +139,54 @@ describe('pushDirty — erreurs non métier et changement de véhicule', () => {
     expect(res.rejected.map((x) => x.code).sort()).toEqual(['23503', '23P01'])
     expect(await db.trips.get(trajet.id)).toMatchObject({ vehicle_id: nouveau.id, _dirty: 1 })
     expect(r.get('trips', trajet.id)).toMatchObject({ vehicle_id: ancien.id })
+  })
+})
+
+describe('pushDirty — verrou sur une ligne jamais reçue par le serveur', () => {
+  // Cas réel : péage ajouté sur un trajet exporté entre-temps depuis un autre appareil
+  // (expenses_verrou, P0001) ; le serveur n'a jamais eu cette ligne, fetchById renvoie null.
+  it('mise à l’écart (_dirty = 2) : conservée sur l’appareil, plus renvoyée, plus comptée comme en attente', async () => {
+    const r = fakeRemote()
+    const e = makeExpense({ trip_id: 'trip-exporte', montant: 4.6 })
+    r.rejectIds.add(e.id)
+    await saveRow(db, 'trip_expenses', e)
+    const res = await pushDirty(db, r.api)
+    expect(res.rejected).toEqual([expect.objectContaining({ table: 'trip_expenses', id: e.id, code: 'P0001', quarantaine: true })])
+    expect(await db.trip_expenses.get(e.id)).toMatchObject({ montant: 4.6, _dirty: 2 })
+    expect(await countDirty(db)).toBe(0)
+    expect(await countQuarantined(db)).toBe(1)
+    const upsert = vi.spyOn(r.api, 'upsert')
+    expect(await pushDirty(db, r.api)).toEqual({ pushed: 0, rejected: [] })
+    expect(upsert).not.toHaveBeenCalled()
+  })
+
+  it('réécrite localement pendant l’isolement : pas de mise à l’écart, reste à pousser', async () => {
+    const r = fakeRemote()
+    const e = makeExpense({ trip_id: 'trip-exporte', montant: 4.6 })
+    r.rejectIds.add(e.id)
+    await saveRow(db, 'trip_expenses', e)
+    const fetchById = r.api.fetchById
+    r.api.fetchById = async (table, id) => {
+      await saveRow(db, 'trip_expenses', { ...e, montant: 5 })
+      return fetchById(table, id)
+    }
+    await pushDirty(db, r.api)
+    expect(await db.trip_expenses.get(e.id)).toMatchObject({ montant: 5, _dirty: 1 })
+  })
+
+  it('moteur : état signalé (compteur + message) sans bloquer l’export', async () => {
+    const r = fakeRemote()
+    const e = makeExpense({ trip_id: 'trip-exporte' })
+    r.rejectIds.add(e.id)
+    const engine = createSyncEngine({ db, remote: r.api, isOnline: () => true })
+    await saveRow(db, 'trip_expenses', e)
+    await engine.syncNow()
+    expect(engine.getState()).toMatchObject({ status: 'idle', pending: 0, quarantined: 1 })
+    expect(engine.getState().message).toMatch(/mise\(s\) à l’écart/)
+    // Une seconde synchro garde l'information visible.
+    await engine.syncNow()
+    expect(engine.getState().message).toMatch(/mise\(s\) à l’écart/)
+    expect(await syncIncompleteReason(db, engine.getState())).toBeNull()
   })
 })
 

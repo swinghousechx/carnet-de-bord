@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeTrip, makeVehicle } from '../test/fixtures'
 import { CarnetDB } from './db'
-import { countDirty, getMeta, newRow, onLocalWrite, saveRow, setMeta, softDelete, stripLocal } from './repo'
+import { countDirty, countQuarantined, getMeta, retryQuarantined, newRow, onLocalWrite, saveRow, setMeta, softDelete, stripLocal } from './repo'
 import type { Vehicle } from '../domain/types'
 
 let db: CarnetDB
@@ -58,5 +58,16 @@ describe('repo', () => {
     expect(await getMeta(db, 'cursor:trips')).toBeNull()
     await setMeta(db, 'cursor:trips', '2026-09-15T10:00:00Z')
     expect(await getMeta(db, 'cursor:trips')).toBe('2026-09-15T10:00:00Z')
+  })
+
+  it('retryQuarantined : les lignes mises à l’écart repartent à pousser', async () => {
+    const v = makeVehicle()
+    await saveRow(db, 'vehicles', v)
+    await db.vehicles.update(v.id, { _dirty: 2 })
+    expect(await countQuarantined(db)).toBe(1)
+    expect(await countDirty(db)).toBe(0)
+    expect(await retryQuarantined(db)).toBe(1)
+    expect(await countQuarantined(db)).toBe(0)
+    expect(await db.vehicles.get(v.id)).toMatchObject({ _dirty: 1 })
   })
 })

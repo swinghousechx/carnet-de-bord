@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo } from 'react'
-import type { CarnetDB } from '../db/db'
+import { MISE_A_L_ECART, type CarnetDB } from '../db/db'
 import { db } from '../db/db'
 import { computeAll, type CalcData, type TripCalc } from '../domain/chain'
 import { effectiveStatut } from '../domain/rules'
@@ -18,14 +18,17 @@ const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filte
 // ponctuel qui a besoin des données les plus fraîches à un instant précis (ex. juste avant de
 // verrouiller un export, après une synchro : voir doExport dans Recap.tsx).
 export async function loadAppData(database: CarnetDB): Promise<AppData> {
+  // Lignes mises à l'écart (refus définitif du serveur, voir db.ts) : ignorées dans les calculs,
+  // pour que l'appareil calcule sur les mêmes données que celles que le serveur verrouillera.
+  const kept = <T extends { _dirty: number }>(rows: T[]) => rows.filter((r) => r._dirty !== MISE_A_L_ECART)
   const [trips, expenses, vehicles, fiscalYears, baremeYears, rates, places, exports] = await Promise.all([
-    database.trips.toArray(),
-    database.trip_expenses.toArray(),
-    database.vehicles.toArray(),
-    database.fiscal_years.toArray(),
-    database.bareme_years.toArray(),
-    database.bareme_rates.toArray(),
-    database.places.toArray(),
+    database.trips.toArray().then(kept),
+    database.trip_expenses.toArray().then(kept),
+    database.vehicles.toArray().then(kept),
+    database.fiscal_years.toArray().then(kept),
+    database.bareme_years.toArray().then(kept),
+    database.bareme_rates.toArray().then(kept),
+    database.places.toArray().then(kept),
     database.exports.toArray(),
   ])
   const ctx = { vehicles: alive(vehicles), places: alive(places) }

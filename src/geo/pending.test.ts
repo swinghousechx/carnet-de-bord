@@ -36,6 +36,15 @@ describe('resolvePendingKm', () => {
     expect(compute).not.toHaveBeenCalled()
   })
 
+  it('ignore un trajet mis à l’écart (refus définitif du serveur) : il ne repart pas à pousser', async () => {
+    const t = pending()
+    await saveRow(db, 'trips', t)
+    await db.trips.update(t.id, { _dirty: 2 })
+    const compute = vi.fn(async () => 1)
+    expect(await resolvePendingKm(db, compute)).toBe(0)
+    expect(await db.trips.get(t.id)).toMatchObject({ _dirty: 2 })
+  })
+
   it('une erreur d’itinéraire laisse le trajet en brouillon', async () => {
     const t = pending()
     await saveRow(db, 'trips', t)

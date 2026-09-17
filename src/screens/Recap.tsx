@@ -11,6 +11,7 @@ import type { ExportData } from '../export/build'
 import { makeExportFiles, shareOrDownload } from '../export/share'
 import type { AppData } from '../hooks/useData'
 import { loadAppData } from '../hooks/useData'
+import { useSyncState } from '../hooks/useSyncState'
 import { nextMonth, nowISO, prevMonth, todayISO } from '../lib/dates'
 import { formatDateCourte, formatEuro, formatKm, formatMoisLong, round2 } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
@@ -47,6 +48,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
   const [ready, setReady] = useState<{ files: File[]; title: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const sync = useSyncState()
 
   // Horodatage d'aperçu (imprimé dans l'ExportData mais pas affiché à l'écran) : mémorisé par
   // (data, mois) uniquement pour que `cards` ci-dessous ne se reconstruise pas à chaque rendu sans
@@ -159,6 +161,13 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
           </>
         }
       />
+
+      {sync.quarantined > 0 && (
+        // Non bloquant : ces lignes sont ignorées des calculs, l'export porte sur les données du serveur.
+        <Banner onClick={() => onGoto('settings')}>
+          {sync.quarantined} modification(s) refusée(s) par le serveur et ignorée(s) dans ce récap : voir Réglages.
+        </Banner>
+      )}
 
       {ACTIVITES.map((a) => {
         const { preview: p, emis: e, display } = cards[a]

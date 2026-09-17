@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { db } from '../db/db'
-import { newRow, saveRow, saveRows } from '../db/repo'
+import { newRow, retryQuarantined, saveRow, saveRows } from '../db/repo'
 import { selectRateSet } from '../domain/bareme'
 import type { TripCalc } from '../domain/chain'
 import { fiscalSettings } from '../domain/rules'
@@ -159,6 +159,13 @@ export default function Settings({ data, calc, onOpenVehicle, onOpenBareme }: Se
 
       <Section header="Synchronisation" footer={sync.message ?? (sync.lastSync ? `Dernière synchro : ${new Date(sync.lastSync).toLocaleString('fr-FR')}` : undefined)}>
         <Row label="État" value={etat} />
+        {sync.quarantined > 0 && (
+          <Row
+            label={<span className="text-red">Réessayer l’envoi des modifications refusées</span>}
+            value={sync.quarantined}
+            onClick={() => void retryQuarantined(db).then(() => syncEngine?.syncNow())}
+          />
+        )}
         <Row label="Synchroniser maintenant" tone="accent" onClick={() => void syncEngine?.syncNow()} />
       </Section>
 

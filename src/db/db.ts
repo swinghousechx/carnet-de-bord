@@ -3,9 +3,15 @@ import type {
   BaremeRate, BaremeYear, ExportRecord, FiscalYear, Place, Trip, TripEvent, TripExpense, Vehicle,
 } from '../domain/types'
 
-// Champs locaux : _dirty = à pousser vers Supabase ; _rev = compteur d'écritures locales.
+// Champs locaux : _rev = compteur d'écritures locales ; _dirty =
+//   0 : identique au serveur ;
+//   1 : à pousser vers Supabase ;
+//   2 : mise à l'écart — refusée par le verrou métier (P0001) alors que le serveur n'a jamais eu
+//       cette ligne. Conservée sur l'appareil (jamais supprimée en silence) mais ni renvoyée, ni
+//       comptée en attente, ni prise en compte dans les calculs ; « Réessayer » dans Réglages.
+export const MISE_A_L_ECART = 2
 export interface LocalMeta {
-  _dirty: 0 | 1
+  _dirty: 0 | 1 | typeof MISE_A_L_ECART
   _rev: number
 }
 export type Local<T> = T & LocalMeta

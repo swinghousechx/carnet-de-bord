@@ -1,4 +1,4 @@
-import { SYNC_TABLES, type CarnetDB, type Local } from '../db/db'
+import { MISE_A_L_ECART, SYNC_TABLES, type CarnetDB, type Local } from '../db/db'
 import { CODE_VERROU, SyncError, type RemoteApi, type ServerRow } from './remote'
 
 export interface Rejection {
@@ -6,6 +6,7 @@ export interface Rejection {
   id: string
   error: string
   code: string | null // P0001 = verrou métier (version serveur rétablie) ; sinon la ligne reste à pousser
+  quarantaine?: true // P0001 sur une ligne inconnue du serveur : mise à l'écart (voir db.ts)
 }
 
 export interface PushResult {
@@ -60,6 +61,19 @@ export function pushOrder<T extends AnyLocal>(table: string, rows: T[]): T[] {
   return [...rows].sort((a, b) => rank(a) - rank(b))
 }
 
+// Verrou métier sur une ligne que le serveur n'a jamais reçue : pas de version serveur à rétablir.
+// La renvoyer bloquerait la synchro et l'export indéfiniment ; la supprimer ferait perdre la saisie.
+// On la met à l'écart (même garde _rev que markClean).
+async function quarantineIfUnchanged(db: CarnetDB, table: string, row: AnyLocal): Promise<boolean> {
+  const tbl = db.table<AnyLocal, string>(table)
+  return db.transaction('rw', tbl, async () => {
+    const cur = await tbl.get(row.id)
+    if (!cur || cur._rev !== row._rev) return false
+    await tbl.update(row.id, { _dirty: MISE_A_L_ECART })
+    return true
+  })
+}
+
 export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushResult> {
   const result: PushResult = { pushed: 0, rejected: [] }
   for (const table of SYNC_TABLES) {
@@ -88,11 +102,13 @@ export async function pushDirty(db: CarnetDB, remote: RemoteApi): Promise<PushRe
       // erreur (contrainte, clé étrangère, droits…) peut venir d'un ordre d'envoi ou d'un état
       // transitoire : écraser la saisie locale ferait perdre une modification (ex. trajets remis
       // sur l'ancien véhicule). La ligne reste donc à pousser et le refus est signalé.
+      let quarantaine = false
       if (one.code === CODE_VERROU) {
         const server: ServerRow | null = await remote.fetchById(table, row.id)
         if (server) await replaceWithServerIfUnchanged(db, table, row, server)
+        else quarantaine = await quarantineIfUnchanged(db, table, row)
       }
-      result.rejected.push({ table, id: row.id, error: one.error, code: one.code })
+      result.rejected.push({ table, id: row.id, error: one.error, code: one.code, ...(quarantaine ? { quarantaine: true as const } : {}) })
     }
   }
   return result
