@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport,
+  defaultRecapMonth, earlierMonthsToExport, fileToShare, modeNote, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport,
   syncIncompleteReason, TOTAL_NATURE, TOTAL_TITRE, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
@@ -39,6 +39,13 @@ interface Confirm {
   firstDraftId: string | null
 }
 
+// « juin, juillet 2026 » si même année, sinon « décembre 2025, janvier 2026 ».
+function moisListe(mois: string[]): string {
+  const annees = new Set(mois.map((m) => m.slice(0, 4)))
+  if (annees.size > 1) return mois.map(formatMoisLong).join(', ')
+  return `${mois.map((m) => formatMoisLong(m).replace(/ \d{4}$/, '')).join(', ')} ${mois[0].slice(0, 4)}`
+}
+
 const STATUT_LABEL: Record<ExportStatut, string> = { emis: 'Émis', a_rectifier: 'À rectifier', remplace: 'Remplacé' }
 const ZERO_TOTAUX = { km: 0, bareme: 0, frais: 0, total: 0, nb_trajets: 0 }
 
@@ -75,6 +82,13 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       }),
     ) as Record<Activite, { preview: ExportPreview; emis: ExportRecord | undefined; display: ExportData | null }>
   }, [data, calc, mois, genereLe])
+
+  // Mois antérieurs encore à exporter, regroupés : « juillet 2026 → [Swing House] ».
+  const enRetard = useMemo(() => {
+    const parMois = new Map<string, Activite[]>()
+    for (const a of ACTIVITES) for (const m of earlierMonthsToExport(data, a, mois)) parMois.set(m, [...(parMois.get(m) ?? []), a])
+    return [...parMois.entries()].sort(([x], [y]) => x.localeCompare(y))
+  }, [data, mois])
 
   function share(d: ExportData) {
     setReady({ files: makeExportFiles(d), title: `${ACTIVITE_LABEL[d.activite]} — ${formatMoisLong(d.mois)} (v${d.version})` })
@@ -178,6 +192,18 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       {vueSwitch}
 
       <RefusBanner onGoto={onGoto} />
+      {enRetard.length > 0 && (
+        // Un seul bandeau : il mène au mois le plus ancien, à exporter en premier.
+        <Banner onClick={() => setMois(enRetard[0][0])}>
+          <span className="block first-letter:uppercase">
+            {enRetard.length === 1
+              ? `${formatMoisLong(enRetard[0][0])} pas encore exporté`
+              : `${moisListe(enRetard.map(([m]) => m))} pas encore exportés`}
+            {` (${[...new Set(enRetard.flatMap(([, acts]) => acts))].map((x) => ACTIVITE_LABEL[x]).join(', ')})`}
+            {enRetard.length === 1 ? ` : à exporter avant ${formatMoisLong(mois)}.` : ` : commencer par ${formatMoisLong(enRetard[0][0])}.`}
+          </span>
+        </Banner>
+      )}
 
       {ACTIVITES.map((a) => {
         const { preview: p, emis: e, display } = cards[a]
@@ -233,7 +259,13 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
                   <Row
                     key={x.id}
                     label={x.motif}
-                    detail={`${formatDateCourte(x.date)} · ${formatKm(x.km_total)}${x.nature === 'domicile_travail' ? ' · domicile–travail' : ''}${!e && calc.get(x.id)?.montant_negatif ? ' · montant négatif' : ''}`}
+                    detail={
+                      <>
+                        {/* En tête de ligne : la date (mois antérieur) dit déjà lequel, et le détail est tronqué. */}
+                        {ligne.rattrapage && <span className="text-warn">Rattrapage · </span>}
+                        {`${formatDateCourte(x.date)} · ${formatKm(x.km_total)}${x.nature === 'domicile_travail' ? ' · domicile–travail' : ''}${!e && calc.get(x.id)?.montant_negatif ? ' · montant négatif' : ''}`}
+                      </>
+                    }
                     value={pourMemoire ? 'Pour mémoire' : formatEuro(ligne.montant_bareme)}
                     onClick={() => onOpenTrip(x.id)}
                     chevron

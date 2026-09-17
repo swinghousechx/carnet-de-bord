@@ -7,7 +7,7 @@ import { CarnetDB, SYNC_TABLES } from '../db/db'
 import { saveRow } from '../db/repo'
 import { makeExpense, makeFiscalYear, makePlace } from '../test/fixtures'
 import {
-  defaultRecapMonth, fileToShare, modeNote, TOTAL_NATURE, TOTAL_TITRE, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
+  defaultRecapMonth, earlierMonthsToExport, fileToShare, modeNote, TOTAL_NATURE, TOTAL_TITRE, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, SYNC_INCOMPLETE, syncIncompleteReason,
 } from './exportFlow'
 
 const { year, rates } = defaultBareme()
@@ -282,3 +282,27 @@ describe('libellés du récap', () => {
     expect(FRAIS_NON_INCLUS).toBe('Péages et parkings non inclus : réglés directement par l’entreprise.')
   })
 })
+
+describe('earlierMonthsToExport', () => {
+  const t = (id: string, date: string, o = {}) => makeTrip({ id, date, statut: 'valide', vehicle_id: 'veh-A', km_total: 10, ...o })
+  it('liste les mois antérieurs encore exportables, du plus ancien au plus récent', () => {
+    const a = app({
+      trips: [
+        t('t1', '2026-07-23'),
+        t('t2', '2026-06-02'),
+        t('t3', '2026-07-09'),
+        t('t4', '2026-08-06'), // le mois affiché lui-même : pas un rattrapage
+        t('t5', '2026-05-10', { activite: 'lmnp' }), // autre activité
+        t('t6', '2026-04-10', { statut: 'brouillon' }), // brouillon : reste dans son mois
+        t('t7', '2026-03-10', { deleted_at: '2026-09-01T00:00:00.000Z' }),
+      ],
+    })
+    expect(earlierMonthsToExport(a, 'swing_house', '2026-08')).toEqual(['2026-06', '2026-07'])
+    expect(earlierMonthsToExport(a, 'lmnp', '2026-08')).toEqual(['2026-05'])
+  })
+  it('ignore un mois déjà exporté : son trajet oublié ne peut plus partir qu’en rattrapage', () => {
+    const a = app({ trips: [t('t1', '2026-07-23')], exports: [makeExport({ mois: '2026-07', statut: 'emis' })] })
+    expect(earlierMonthsToExport(a, 'swing_house', '2026-08')).toEqual([])
+  })
+})
+

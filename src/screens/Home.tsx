@@ -52,7 +52,9 @@ export default function Home({ data, onOpenTrip, onGoto }: HomeProps) {
       {s.aConfigurer && <Banner onClick={() => onGoto('settings')}>Renseigner le véhicule et le domicile</Banner>}
       {s.nonExportes.length > 0 && (
         <Banner onClick={() => onGoto('recap')}>
-          {formatMoisLong(prevMonth(s.mois))} pas encore exporté : {s.nonExportes.map((a) => ACTIVITE_LABEL[a]).join(', ')}
+          <span className="block first-letter:uppercase">
+            {formatMoisLong(prevMonth(s.mois))} pas encore exporté : {s.nonExportes.map((a) => ACTIVITE_LABEL[a]).join(', ')}
+          </span>
         </Banner>
       )}
       <Section footer={s.brouillons > 0 ? `${nb(s.brouillons, 'brouillon')} à compléter.` : undefined}>

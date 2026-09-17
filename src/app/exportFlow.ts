@@ -135,3 +135,15 @@ export function defaultRecapMonth(app: AppData, today: string): string {
   const reste = ACTIVITES.some((a) => monthNeedsExport(app, a, prev))
   return reste ? prev : mois
 }
+
+// Mois antérieurs à `mois` qui ont encore des trajets validés non exportés ET qu'on peut encore
+// exporter (pas d'export émis pour ce mois) : le Récap propose de les exporter d'abord, pour que
+// chaque note corresponde à son mois plutôt que de partir en rattrapage. Du plus ancien au plus récent.
+export function earlierMonthsToExport(app: AppData, activite: Activite, mois: string): string[] {
+  const mois_ = new Set(
+    app.trips
+      .filter((t) => !t.deleted_at && t.activite === activite && t.statut === 'valide' && t.export_id == null && monthOf(t.date) < mois)
+      .map((t) => monthOf(t.date)),
+  )
+  return [...mois_].filter((m) => exportBlockReason(app.exports, activite, m) == null).sort()
+}
