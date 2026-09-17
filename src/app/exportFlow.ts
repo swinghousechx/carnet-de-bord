@@ -37,6 +37,21 @@ export function prepareExport(app: AppData, calc: Map<string, TripCalc>, activit
   return { prepared, blocked: null, drafts }
 }
 
+// Deux préparations verrouilleraient-elles le même export ? Comparé juste avant l'appel réseau
+// (voir doExport dans Recap.tsx) entre l'aperçu confirmé par l'utilisateur et un aperçu recalculé
+// sur les données les plus fraîches (après synchro) : une différence signifie qu'une donnée a
+// changé entre-temps (édition distante, chaîne du barème modifiée…) et que les montants confirmés
+// ne doivent pas être figés tels quels.
+export function sameExport(a: PreparedExport, b: PreparedExport): boolean {
+  if (a.data.version !== b.data.version) return false
+  if (a.payload.length !== b.payload.length) return false
+  const montants = new Map(b.payload.map((l) => [l.id, l.montant_bareme]))
+  if (a.payload.some((l) => montants.get(l.id) !== l.montant_bareme)) return false
+  const t1 = a.data.totaux
+  const t2 = b.data.totaux
+  return t1.km === t2.km && t1.bareme === t2.bareme && t1.frais === t2.frais && t1.total === t2.total && t1.nb_trajets === t2.nb_trajets
+}
+
 // Verrouillage côté serveur (transactionnel) : nécessite le réseau.
 export async function runExport(client: SupabaseClient, p: PreparedExport): Promise<{ id: string; version: number }> {
   // Garde-fou : ne devrait jamais être atteint (le bouton d'export est désactivé dans ce cas),

@@ -53,7 +53,7 @@ export default function App() {
   return (
     <div className="min-h-full bg-bg pb-[calc(env(safe-area-inset-bottom)+72px)]">
       {tab === 'home' && <Home data={data} onOpenTrip={(id) => openTrip(id)} onGoto={setTab} />}
-      {tab === 'recap' && <Recap data={data} calc={calc} onOpenTrip={(id) => openTrip(id)} />}
+      {tab === 'recap' && <Recap data={data} calc={calc} onOpenTrip={(id) => openTrip(id)} onGoto={setTab} />}
       {tab === 'settings' && (
         <Settings
           data={data}

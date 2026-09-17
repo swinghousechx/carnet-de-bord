@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { computeAll } from '../domain/chain'
 import type { AppData } from '../hooks/useData'
 import { defaultBareme, makeExport, makeTrip, makeVehicle } from '../test/fixtures'
-import { defaultRecapMonth, prepareExport, rebuildExport, runExport } from './exportFlow'
+import { defaultRecapMonth, prepareExport, rebuildExport, runExport, sameExport } from './exportFlow'
 
 const { year, rates } = defaultBareme()
 const app = (o: Partial<AppData> = {}): AppData => ({
@@ -38,6 +38,46 @@ describe('prepareExport', () => {
     expect(p.prepared?.data.bareme_indisponible).toBe(true)
     expect(p.prepared?.data.totaux.km).toBe(100)
     expect(p.prepared?.data.totaux.bareme).toBe(0)
+  })
+
+  it('bloque aussi quand le barème est incomplet pour la puissance fiscale du véhicule (branche catch de chain.ts)', () => {
+    // Barème présent pour l'année mais amputé de la tranche 5 CV (véhicule par défaut des fixtures) :
+    // chain.computeAll échoue au calcul (catch) et signale bareme_indisponible, pas d'année absente.
+    const ratesSans5cv = rates.filter((r) => !(r.cv_min === 5 && r.cv_max === 5))
+    const t = makeTrip({ date: '2026-09-10', km_total: 100 })
+    const a = app({ trips: [t], rates: ratesSans5cv })
+    const p = prepareExport(a, computeAll(a), 'swing_house', '2026-09', 'x')
+    expect(p.blocked).toMatch(/[Bb]arème/)
+    expect(p.prepared?.data.bareme_indisponible).toBe(true)
+    expect(p.prepared?.data.totaux.bareme).toBe(0)
+  })
+})
+
+describe('sameExport', () => {
+  const t = makeTrip({ date: '2026-09-10', km_total: 100 })
+  const a = app({ trips: [t] })
+  const p1 = prepareExport(a, computeAll(a), 'swing_house', '2026-09', 'x').prepared!
+
+  it('deux préparations identiques (même si générées à un instant différent) → true', () => {
+    const p2 = prepareExport(a, computeAll(a), 'swing_house', '2026-09', 'y').prepared!
+    expect(sameExport(p1, p2)).toBe(true)
+  })
+
+  it('un montant différent pour le même trajet → false', () => {
+    const p2: typeof p1 = { ...p1, payload: [{ id: p1.payload[0].id, montant_bareme: p1.payload[0].montant_bareme + 1 }] }
+    expect(sameExport(p1, p2)).toBe(false)
+  })
+
+  it('un trajet supplémentaire arrivé entre-temps (ex. synchronisé depuis un autre appareil) → false', () => {
+    const t2 = makeTrip({ date: '2026-09-11', km_total: 20 })
+    const a2 = app({ trips: [t, t2] })
+    const p2 = prepareExport(a2, computeAll(a2), 'swing_house', '2026-09', 'x').prepared!
+    expect(sameExport(p1, p2)).toBe(false)
+  })
+
+  it('une version différente (ex. un export concurrent est passé entre-temps) → false', () => {
+    const p2: typeof p1 = { ...p1, data: { ...p1.data, version: p1.data.version + 1 } }
+    expect(sameExport(p1, p2)).toBe(false)
   })
 })
 
