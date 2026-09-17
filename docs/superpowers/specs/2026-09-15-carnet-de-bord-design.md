@@ -5,7 +5,7 @@ Source : cahier des charges fonctionnel de Sam (« Carnet de bord — Notes de f
 
 ## 1. Objectif et périmètre
 
-PWA installable sur iPhone pour logger chaque déplacement professionnel, calculer le montant dû au barème kilométrique + frais annexes, et produire chaque mois **deux exports distincts** pour le comptable :
+PWA installable sur iPhone pour logger chaque déplacement professionnel, calculer les indemnités kilométriques au barème (péages et parkings exclus, voir §6.4), et produire chaque mois **deux exports distincts** pour le comptable :
 
 - **Swing House (SAS)** : note de frais versée par la société au dirigeant (remboursement).
 - **LMNP Nid de l'Aiguille (EI, BIC réel)** : charge déductible dans la compta de l'EI (pas un versement).
@@ -114,7 +114,7 @@ Favoris initiaux : Domicile (Servoz), Swing House, Appartement LMNP (Chamonix). 
 | `export_id` | null tant que non exporté |
 
 ### `trip_expenses`
-`trip_id`, `type` ∈ {`peage`, `parking`, `autre`}, `montant numeric(8,2)` > 0, `note`. Verrouillé si le trajet est exporté.
+`trip_id`, `type` ∈ {`peage`, `parking`, `autre`}, `montant numeric(8,2)` > 0, `note`. Verrouillé si le trajet est exporté. **Plus alimentée ni utilisée dans les calculs** (voir §6.4) ; table et synchro conservées, lignes existantes ignorées.
 
 ### `exports`
 `activite`, `mois` (`YYYY-MM`), `version int` (1, 2…), `statut` ∈ {`emis`, `a_rectifier`}, `bareme_annee`, `bareme_provisoire bool`, `totaux jsonb` (km, barème, frais, total), `trip_ids uuid[]`, `created_at`.
@@ -147,8 +147,9 @@ Les brouillons comptent dans le calcul (vision « projetée ») ; seuls les traj
 ### 6.3 Barème de l'année
 Utilise `bareme_rates` de l'année du trajet ; à défaut, la dernière année disponible antérieure, marquée **provisoire** (affichée à l'écran et sur l'export). Saisir le nouveau barème recalcule les trajets non exportés ; les exportés restent figés.
 
-### 6.4 Frais annexes
-Somme des `trip_expenses`, toujours ajoutés, quel que soit le mode. En mode `frais_reels`, le montant véhicule est 0 et seuls les frais annexes comptent (frais réels complets gérés hors app ; les km restent enregistrés).
+### 6.4 Frais annexes : retirés
+Les péages (badge facturé au mois ou carte de l'entreprise) et les parkings (carte de l'entreprise) sont réglés directement par l'entreprise et déjà comptabilisés. Les ajouter à la note les compterait deux fois : le barème couvre les frais du véhicule, et péages/parkings ne s'y ajoutent que s'ils sont payés personnellement, ce qui n'est jamais le cas ici. Ils ne sont donc ni saisis ni comptés : montant d'un trajet = indemnité kilométrique seule ; `totaux.frais` reste à 0 (clé conservée pour le contrôle serveur total = barème + frais). La mention « Péages et parkings non inclus : réglés directement par l'entreprise. » figure sur le Récap et le PDF.
+En mode `frais_reels`, l'indemnité est 0 (frais réels complets gérés hors app ; les km restent enregistrés), mention « frais réels : barème non appliqué » sur le CSV, le PDF et le Récap.
 
 ## 7. Garde-fous de conformité
 
@@ -199,14 +200,13 @@ L'app doit ressembler à une app iOS native (Réglages, Rappels, Cartes), pas à
 7. Motif : champ + suggestions récentes.
 8. Question domicile–travail si applicable.
 9. Véhicule : affiché en lecture seule (déduit de la date).
-10. « + Péage / Parking / Autre » : lignes montant + note.
-11. **Enregistrer** (→ validé si complet) · « Finir plus tard » (→ brouillon).
+10. **Enregistrer** (→ validé si complet) · « Finir plus tard » (→ brouillon).
 Après enregistrement : bouton **« Étape suivante »** → nouveau trajet pré-rempli avec départ = arrivée précédente, même date et activité (saisie des sorties multi-étapes, un segment = un trajet).
 Hors ligne : autocomplete indisponible → seuls favoris et récents sélectionnables ; trajet en brouillon jusqu'au calcul des km.
 
 ### 9.3 Récap / export
 - Sélecteur de mois.
-- Une carte par activité : km, montant barème, frais annexes, total (« **à te verser** » pour Swing House, « **charge déductible** » pour LMNP), nombre de trajets, brouillons restants, rattrapages. Total global.
+- Une carte par activité : nombre de trajets, km, un seul montant en gras (« **Indemnités kilométriques à rembourser** » pour Swing House — remboursement de frais professionnels —, « **Indemnités kilométriques (charge déductible)** » pour LMNP), brouillons restants, rattrapages. Total global, avec la mention « Péages et parkings non inclus : réglés directement par l'entreprise. »
 - Mention « barème provisoire » si applicable.
 - Bouton « Exporter Swing House — septembre 2026 » (idem LMNP) : pousse la synchro, confirme (« Verrouille N trajets »), appelle `export_month`, génère PDF + CSV, ouvre la feuille de partage iOS avec les deux fichiers. Si des brouillons existent sur ce mois : action principale « Compléter d'abord », secondaire « Exporter quand même » (les brouillons partiront au prochain export en rattrapage).
 - Historique des exports (version, date, statut) avec re-partage (fichiers régénérés à partir des données figées).
@@ -244,9 +244,9 @@ Hors ligne : autocomplete indisponible → seuls favoris et récents sélectionn
 Mise en page sobre, dans le même esprit que l'app : noir sur blanc, Helvetica, filets fins, aucune couleur.
 - En-tête : « Swing House SAS — Note de frais kilométriques » ou « LMNP Nid de l'Aiguille (EI) — Frais de déplacement ». Bénéficiaire : Sam Pochat. Période. Version (« v2 — annule et remplace v1 » le cas échéant).
 - Véhicule(s) : nom, immatriculation, CV, énergie. Barème appliqué (année, « provisoire » le cas échéant). Cumul annuel du groupe avant / après ce mois.
-- Tableau (une ligne par trajet) : date, motif, départ → arrivée, km (A/R indiqué), montant barème, frais annexes (détail), total. Justification des km corrigés en note. Rattrapages signalés avec leur mois d'origine.
+- Tableau (une ligne par trajet) : date, motif, départ → arrivée, km (A/R indiqué), indemnité. Justification des km corrigés en note. Rattrapages signalés avec leur mois d'origine.
 - Section « Pour mémoire — trajets domicile–travail non remboursés » (SAS, si exclus) : date, km, montant 0.
-- Totaux : km, barème, frais annexes, **total**. Mention « Certifié exact » + date.
+- Totaux : km, **indemnité**. Mention « Péages et parkings non inclus : réglés directement par l'entreprise. » en en-tête. Mention « Certifié exact » + date.
 
 ### CSV
 Une ligne par trajet ; colonnes définies dans `src/export/columns.ts` (seul fichier à modifier quand le comptable aura répondu). Séparateur `;`, décimales à virgule, UTF-8 avec BOM (ouverture directe dans Excel FR).
