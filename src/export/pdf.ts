@@ -62,8 +62,8 @@ export function baremeTexte(baremes: { annee: number | null; provisoire: boolean
   return `Barème kilométrique ${parts.length > 0 ? parts.join(' ; ') : '-'}`
 }
 
-// Cellule de tableau : texte simple, ou ligne de sous-total (en gras).
-export type PdfCell = string | { content: string; bold: true }
+// Cellule de tableau : texte simple, ou cellule de sous-total (en gras, éventuellement sur plusieurs colonnes).
+export type PdfCell = string | { content: string; bold: true; colSpan?: number }
 
 export interface PdfTable {
   titre?: string
@@ -85,7 +85,10 @@ export interface PdfDocument {
   piedPage: string // ex. « … - septembre 2026 », suivi de « - page i/n »
 }
 
-const cell = (c: PdfCell) => (typeof c === 'string' ? pdfText(c) : { content: pdfText(c.content), styles: { fontStyle: 'bold' as const } })
+const cell = (c: PdfCell) =>
+  typeof c === 'string'
+    ? pdfText(c)
+    : { content: pdfText(c.content), styles: { fontStyle: 'bold' as const }, ...(c.colSpan ? { colSpan: c.colSpan } : {}) }
 
 export function renderDocument(p: PdfDocument): Blob {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })

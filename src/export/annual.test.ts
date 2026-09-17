@@ -157,13 +157,24 @@ describe('récapitulatif annuel — contenu', () => {
   it('PDF : sous-totaux par mois, total annuel, sous-totaux par véhicule (plus d’un véhicule)', () => {
     const [principal, vehicules] = annualPdfTables(d)
     expect(principal.head).toEqual(['Date', 'Motif', 'Trajet', 'Km', 'Indemnité', 'Statut'])
-    const sousTotaux = principal.body.filter((r) => typeof r[0] !== 'string').map((r) => r.map((c) => (typeof c === 'string' ? c : c.content)))
-    expect(sousTotaux).toEqual([
-      ['Sous-total mars 2026', '1 trajet(s)', '', '2500,0', '1 729,50 €', ''],
-      ['Sous-total mai 2026', '1 trajet(s)', '', '4000,0', '1 986,00 €', ''],
-      ['Sous-total août 2026', '1 trajet(s)', '', '1000,0', '697,00 €', ''],
-      ['Sous-total septembre 2026', '1 trajet(s)', '', '200,0', '139,40 €', ''],
+    const sousTotaux = principal.body.filter((r) => typeof r[0] !== 'string')
+    // Libellé sur Date + Motif + Trajet (colSpan 3) : jamais replié dans la colonne Date.
+    expect(sousTotaux[0]).toEqual([
+      { content: 'Sous-total mars 2026 · 1 trajet(s)', bold: true, colSpan: 3 },
+      { content: '2500,0', bold: true },
+      { content: '1 729,50 €', bold: true },
+      { content: '', bold: true },
     ])
+    expect(sousTotaux.map((r) => r.map((c) => (typeof c === 'string' ? c : c.content)))).toEqual([
+      ['Sous-total mars 2026 · 1 trajet(s)', '2500,0', '1 729,50 €', ''],
+      ['Sous-total mai 2026 · 1 trajet(s)', '4000,0', '1 986,00 €', ''],
+      ['Sous-total août 2026 · 1 trajet(s)', '1000,0', '697,00 €', ''],
+      ['Sous-total septembre 2026 · 1 trajet(s)', '200,0', '139,40 €', ''],
+    ])
+    // Chaque ligne couvre exactement les 6 colonnes.
+    for (const r of principal.body) {
+      expect(r.reduce((n, c) => n + (typeof c === 'string' ? 1 : (c.colSpan ?? 1)), 0)).toBe(6)
+    }
     expect(principal.foot).toEqual(['Total 2026', '4 trajet(s)', '', '7700,0', '4 551,90 €', ''])
     expect(vehicules.head).toEqual(['Véhicule', 'Trajets', 'Km', 'Indemnité'])
     expect(vehicules.body).toEqual([

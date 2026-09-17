@@ -176,7 +176,14 @@ export function annualEntete(d: AnnualData): string[] {
   ].filter(Boolean)
 }
 
-const gras = (cells: string[]): PdfCell[] => cells.map((content) => ({ content, bold: true as const }))
+// Ligne de sous-total : libellé sur Date + Motif + Trajet (une seule ligne, jamais replié dans la
+// colonne Date), puis km, indemnité et statut vide dans leurs colonnes.
+const sousTotalRow = (libelle: string, s: SousTotal): PdfCell[] => [
+  { content: `${libelle} · ${s.nb} trajet(s)`, bold: true, colSpan: 3 },
+  { content: decimalFr(s.km, 1), bold: true },
+  { content: formatEuro(s.indemnite), bold: true },
+  { content: '', bold: true },
+]
 const totalCells = (libelle: string, s: SousTotal) => [libelle, `${s.nb} trajet(s)`, '', decimalFr(s.km, 1), formatEuro(s.indemnite), '']
 
 // Tableau principal (trajets groupés par mois avec sous-totaux, total annuel en pied), puis
@@ -184,7 +191,7 @@ const totalCells = (libelle: string, s: SousTotal) => [libelle, `${s.nb} trajet(
 export function annualPdfTables(d: AnnualData): PdfTable[] {
   const body: PdfCell[][] = d.parMois.flatMap((m) => [
     ...d.lignes.filter((l) => l.mois === m.mois).map((l) => [...trajetCells(l, false), l.statut]),
-    gras(totalCells(`Sous-total ${formatMoisLong(m.mois)}`, m)),
+    sousTotalRow(`Sous-total ${formatMoisLong(m.mois)}`, m),
   ])
   const principal: PdfTable = {
     head: ['Date', 'Motif', 'Trajet', 'Km', 'Indemnité', 'Statut'],

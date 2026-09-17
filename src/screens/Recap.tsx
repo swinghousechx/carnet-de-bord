@@ -11,7 +11,6 @@ import { FRAIS_NON_INCLUS, type ExportData } from '../export/build'
 import { makeExportFiles, shareOrDownload } from '../export/share'
 import type { AppData } from '../hooks/useData'
 import { loadAppData } from '../hooks/useData'
-import { useSyncState } from '../hooks/useSyncState'
 import { nextMonth, nowISO, prevMonth, todayISO } from '../lib/dates'
 import { formatDateCourte, formatEuro, formatKm, formatMoisLong } from '../lib/format'
 import { ActionSheet } from '../ui/ActionSheet'
@@ -22,6 +21,7 @@ import { IconChevron } from '../ui/icons'
 import { FootNote, Row, Section } from '../ui/List'
 import { Segmented } from '../ui/Segmented'
 import RecapAnnuel from './RecapAnnuel'
+import { RefusBanner } from './RefusBanner'
 import { LargeTitle, NavButton } from '../ui/NavBar'
 import type { Tab } from '../ui/TabBar'
 
@@ -49,7 +49,6 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
   const [ready, setReady] = useState<{ files: File[]; title: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const sync = useSyncState()
   const [vue, setVue] = useState<'mois' | 'annee'>('mois')
 
   // Horodatage d'aperçu (imprimé dans l'ExportData mais pas affiché à l'écran) : mémorisé par
@@ -153,7 +152,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       />
     </div>
   )
-  if (vue === 'annee') return <RecapAnnuel data={data} calc={calc} vueSwitch={vueSwitch} />
+  if (vue === 'annee') return <RecapAnnuel data={data} calc={calc} vueSwitch={vueSwitch} onGoto={onGoto} />
 
   const historique = [...data.exports].sort((a, b) => b.mois.localeCompare(a.mois) || b.version - a.version)
 
@@ -175,12 +174,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
       />
       {vueSwitch}
 
-      {sync.quarantined > 0 && (
-        // Non bloquant : ces lignes sont ignorées des calculs, l'export porte sur les données du serveur.
-        <Banner onClick={() => onGoto('settings')}>
-          {sync.quarantined} modification(s) refusée(s) par le serveur et ignorée(s) dans ce récap : voir Réglages.
-        </Banner>
-      )}
+      <RefusBanner onGoto={onGoto} />
 
       {ACTIVITES.map((a) => {
         const { preview: p, emis: e, display } = cards[a]

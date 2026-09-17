@@ -16,15 +16,18 @@ import { PrimaryButton } from '../ui/Button'
 import { IconChevron } from '../ui/icons'
 import { FootNote, Row, Section } from '../ui/List'
 import { LargeTitle, NavButton } from '../ui/NavBar'
+import type { Tab } from '../ui/TabBar'
+import { RefusBanner } from './RefusBanner'
 
 export interface RecapAnnuelProps {
   data: AppData
   calc: Map<string, TripCalc>
   vueSwitch: ReactNode
+  onGoto: (t: Tab) => void
 }
 
 // Vue « Année » du Récap : synthèse par activité (jamais additionnées), export non verrouillant.
-export default function RecapAnnuel({ data, calc, vueSwitch }: RecapAnnuelProps) {
+export default function RecapAnnuel({ data, calc, vueSwitch, onGoto }: RecapAnnuelProps) {
   const [annee, setAnnee] = useState(() => yearOf(todayISO()))
   const [ready, setReady] = useState<{ files: File[]; title: string } | null>(null)
 
@@ -50,6 +53,7 @@ export default function RecapAnnuel({ data, calc, vueSwitch }: RecapAnnuelProps)
         }
       />
       {vueSwitch}
+      <RefusBanner onGoto={onGoto} />
 
       {cards.map((d) => {
         const statut = annualCardStatus(d)
