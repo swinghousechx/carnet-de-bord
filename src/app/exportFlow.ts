@@ -3,7 +3,7 @@ import type { CarnetDB } from '../db/db'
 import { countDirty } from '../db/repo'
 import type { TripCalc } from '../domain/chain'
 import { ACTIVITES, type Activite, type ExportRecord, type Trip } from '../domain/types'
-import { buildExportData, FRAIS_NON_INCLUS, rpcTripsPayload, type ExportData } from '../export/build'
+import { buildExportData, rpcTripsPayload, type ExportData } from '../export/build'
 import { draftsForExport, exportBlockReason, nextVersion, tripsForExport, tripsOfExport } from '../export/select'
 import type { AppData } from '../hooks/useData'
 import { monthOf, prevMonth, yearOf } from '../lib/dates'
@@ -70,17 +70,16 @@ export function fileToShare(sent: PreparedExport, rebuilt: ExportData | null, re
   return record ? { ...sent.data, genere_le: record.created_at } : sent.data
 }
 
-// Montant négatif dans l'aperçu : on prévient sans bloquer (l'invariant de la chaîne garde le total
-// annuel juste ; c'est le signe qu'un barème ou une puissance fiscale a changé après un export).
-// Libellé du montant de chaque carte Récap : remboursement de frais professionnels (indemnités
-// kilométriques) pour la SAS, charge déductible pour l'EI LMNP.
-export const TOTAL_LABEL: Record<Activite, string> = {
-  swing_house: 'Indemnités kilométriques à rembourser',
-  lmnp: 'Indemnités kilométriques (charge déductible)',
+// Montant de chaque carte Récap : indemnités kilométriques, avec leur nature en seconde ligne
+// (remboursement de frais professionnels pour la SAS, charge déductible pour l'EI LMNP).
+export const TOTAL_TITRE = 'Indemnités kilométriques'
+export const TOTAL_NATURE: Record<Activite, string> = {
+  swing_house: 'À rembourser',
+  lmnp: 'Charge déductible',
 }
 
-export { FRAIS_NON_INCLUS }
-
+// Montant négatif dans l'aperçu : on prévient sans bloquer (l'invariant de la chaîne garde le total
+// annuel juste ; c'est le signe qu'un barème ou une puissance fiscale a changé après un export).
 export const NEGATIF_AVERTISSEMENT =
   'Un montant est négatif : le barème ou la puissance du véhicule a changé après un export. Vérifie avant d’exporter.'
 

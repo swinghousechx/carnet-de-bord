@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import {
-  defaultRecapMonth, FRAIS_NON_INCLUS, fileToShare, modeNote, TOTAL_LABEL, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
+  defaultRecapMonth, fileToShare, modeNote, TOTAL_NATURE, TOTAL_TITRE, NEGATIF_AVERTISSEMENT, prepareExport, rebuildExport, runExport, sameExport, syncIncompleteReason, type ExportPreview, type PreparedExport,
 } from '../app/exportFlow'
 import { supabase } from '../app/supabase'
 import { syncEngine } from '../app/sync'
 import { db } from '../db/db'
 import { computeAll, type TripCalc } from '../domain/chain'
 import { ACTIVITES, ACTIVITE_LABEL, type Activite, type ExportRecord, type ExportStatut } from '../domain/types'
-import type { ExportData } from '../export/build'
+import { FRAIS_NON_INCLUS, type ExportData } from '../export/build'
 import { makeExportFiles, shareOrDownload } from '../export/share'
 import type { AppData } from '../hooks/useData'
 import { loadAppData } from '../hooks/useData'
@@ -206,7 +206,7 @@ export default function Recap({ data, calc, onOpenTrip, onGoto }: RecapProps) {
             >
               <Row label="Trajets" value={totaux.nb_trajets} />
               <Row label="Distance" value={formatKm(totaux.km)} />
-              <Row label={<span className="font-semibold">{TOTAL_LABEL[a]}</span>} value={<span className="font-semibold text-label">{formatEuro(totaux.bareme)}</span>} />
+              <Row label={<span className="font-semibold">{TOTAL_TITRE}</span>} detail={TOTAL_NATURE[a]} value={<span className="font-semibold text-label">{formatEuro(totaux.bareme)}</span>} />
               {p.drafts.length > 0 && !e && (
                 <Row label={<span className="text-orange">{p.drafts.length} brouillon(s) à compléter</span>} onClick={() => onOpenTrip(p.drafts[0].id)} chevron />
               )}
